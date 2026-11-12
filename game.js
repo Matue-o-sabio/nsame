@@ -1,6 +1,6 @@
 /* =========================================================================
-   AETHEL — A Lâmina Estilhaçada
-   game.js — Motor de RPG 2D (Canvas 2D + Vanilla JS)
+   AETHEL v2 — A Lâmina Estilhaçada
+   game.js — Motor de RPG 2D com mapas e correções
    ========================================================================= */
 (function () {
 'use strict';
@@ -17,17 +17,15 @@ const pick = arr => arr[(Math.random() * arr.length) | 0];
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
 /* =========================================================================
-   1. CONFIGURAÇÃO E ESTADO GLOBAL
+   1. CONFIGURAÇÃO — CAMPO DE VISÃO AUMENTADO
    ========================================================================= */
-const VW = 1280, VH = 720;                 // resolução lógica
-const WORLD = { w: 3000, h: 1800 };        // dimensões do mundo
+const VW = 1600, VH = 900;                 // resolução lógica ampliada
 const SPAWN = { x: 700, y: 900 };
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = VW; canvas.height = VH;
 
-// canvas auxiliar de iluminação
 const lightCanvas = document.createElement('canvas');
 lightCanvas.width = VW; lightCanvas.height = VH;
 const lctx = lightCanvas.getContext('2d');
@@ -38,9 +36,15 @@ const G = {
   paused: false,
   over: false,
   potions: 3,
-  relicEquipped: true,          // Manto do Vento Noturno
-  legendaryEquipped: true,      // Lâmina Estilhaçada de Aethel
-  bossEngaged: false
+  relicEquipped: true,
+  legendaryEquipped: true,
+  bossEngaged: false,
+  currentMap: 0,
+  transitioning: false,
+  enemies: [],
+  npcs: [],
+  portals: [],
+  decor: []
 };
 
 /* =========================================================================
@@ -69,13 +73,9 @@ window.addEventListener('mouseup', () => { mouse.down = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 function onKeyDown(code) {
-  if (code === 'KeyI') { toggleInventory(); return; }
-  if (code === 'Escape') {
-    if (Dialogue.active) { Dialogue.close(); return; }
-    if (!document.getElementById('inventory').classList.contains('hidden')) toggleInventory();
-    return;
-  }
+  // Diálogo tem prioridade
   if (Dialogue.active) {
+    if (code === 'Escape') { Dialogue.close(); return; }
     if (code === 'KeyE' || code === 'Space' || code === 'Enter') {
       if (Dialogue.typing) Dialogue.skip();
       else if (Dialogue.node && Dialogue.node.options && Dialogue.node.options[0]) Dialogue.choose(Dialogue.node.options[0]);
@@ -86,12 +86,17 @@ function onKeyDown(code) {
     }
     return;
   }
+  if (code === 'KeyI') { toggleInventory(); return; }
+  if (code === 'Escape') {
+    if (!document.getElementById('inventory').classList.contains('hidden')) toggleInventory();
+    return;
+  }
   if (code === 'Digit1') usePotion();
-  if (code === 'KeyE' && !G.paused) tryInteract();
+  if (code === 'KeyE') tryInteract();
 }
 
 /* =========================================================================
-   3. ÁUDIO PROCEDURAL (Web Audio API)
+   3. ÁUDIO PROCEDURAL
    ========================================================================= */
 const Audio = {
   ctx: null, master: null, step: 0, nextNote: 0, tempo: 1, enabled: false,
@@ -164,6 +169,7 @@ const Audio = {
       case 'crow':    this.noise(0.18, 0.08, 3200); break;
       case 'nova':    this.sweep(180, 1400, 0.35, 'sine', 0.12); this.noise(0.3, 0.12, 4000); break;
       case 'die':     this.sweep(420, 60, 0.9, 'sawtooth', 0.16); break;
+      case 'portal':  this.sweep(400, 1600, 0.5, 'sine', 0.12); break;
     }
   },
 
@@ -179,7 +185,7 @@ const Audio = {
 
   playBeat(t) {
     const scale = [0, 3, 5, 7, 10, 12, 15];
-    const root = 110;                 // A2
+    const root = 110;
     const step = this.step;
     if (step % 4 === 0) this.tone(root * 0.5, t, 1.0, 'sine', 0.20);
     if (step % 8 === 6) this.tone(root * 0.75, t, 0.7, 'sine', 0.10);
@@ -194,10 +200,11 @@ const Audio = {
    ========================================================================= */
 const camera = {
   x: 0, y: 0, shakeX: 0, shakeY: 0, shakeMag: 0, shakeTime: 0,
+  worldW: 3000, worldH: 1800,
 
   follow(target, dt) {
-    const tx = clamp(target.x - VW / 2, 0, WORLD.w - VW);
-    const ty = clamp(target.y - VH / 2, 0, WORLD.h - VH);
+    const tx = clamp(target.x - VW / 2, 0, this.worldW - VW);
+    const ty = clamp(target.y - VH / 2, 0, this.worldH - VH);
     const k = 1 - Math.pow(0.0009, dt);
     this.x = lerp(this.x, tx, k);
     this.y = lerp(this.y, ty, k);
@@ -220,10 +227,10 @@ const camera = {
 };
 
 /* =========================================================================
-   5. SISTEMA DE PARTÍCULAS
+   5. PARTÍCULAS
    ========================================================================= */
 const particles = [];
-const MAX_PARTICLES = 950;
+const MAX_PARTICLES = 1100;
 
 function P(o) {
   if (particles.length >= MAX_PARTICLES) return;
@@ -349,14 +356,6 @@ function drawParticles(g) {
         g.restore();
         break;
       }
-      case 'mist': {
-        const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-        grad.addColorStop(0, p.color);
-        grad.addColorStop(1, 'rgba(120,150,200,0)');
-        g.fillStyle = grad;
-        g.beginPath(); g.arc(p.x, p.y, p.size, 0, TAU); g.fill();
-        break;
-      }
       case 'crow': {
         g.save();
         g.translate(p.x, p.y);
@@ -378,6 +377,17 @@ function drawParticles(g) {
         g.beginPath(); g.arc(p.x, p.y, p.size, 0, TAU); g.stroke();
         break;
       }
+      case 'leaf': {
+        g.save();
+        g.translate(p.x, p.y);
+        g.rotate(p.rot);
+        g.fillStyle = p.color;
+        g.beginPath();
+        g.ellipse(0, 0, p.size, p.size * 0.5, 0, 0, TAU);
+        g.fill();
+        g.restore();
+        break;
+      }
       default: {
         g.fillStyle = p.color;
         g.beginPath(); g.arc(p.x, p.y, p.size * a, 0, TAU); g.fill();
@@ -389,7 +399,7 @@ function drawParticles(g) {
 }
 
 /* =========================================================================
-   6. PRÉ-RENDERIZAÇÃO DAS CAMADAS DE PARALLAX
+   6. CAMADAS DE PARALLAX
    ========================================================================= */
 function makeLayer(w, h, drawFn) {
   const c = document.createElement('canvas');
@@ -399,8 +409,9 @@ function makeLayer(w, h, drawFn) {
   return c;
 }
 
-const LW = 1280, LH = 900;
+const LW = 1600, LH = 1000;
 let skyLayer, mountainLayer, farForest, nearForest, foreLayer, groundTile, groundPattern;
+let villageGroundTile, villageGroundPattern;
 
 function wrap(g, W, x, fn) {
   fn(x);
@@ -409,7 +420,7 @@ function wrap(g, W, x, fn) {
 }
 
 function buildLayers() {
-  /* ---------- CÉU ---------- */
+  /* ---------- CÉU (floresta) ---------- */
   skyLayer = makeLayer(LW, LH, (g) => {
     const grad = g.createLinearGradient(0, 0, 0, LH);
     grad.addColorStop(0.00, '#04050e');
@@ -420,18 +431,17 @@ function buildLayers() {
     g.fillStyle = grad;
     g.fillRect(0, 0, LW, LH);
 
-    for (let i = 0; i < 460; i++) {
+    for (let i = 0; i < 520; i++) {
       const x = Math.random() * LW;
       const y = Math.random() * LH * 0.68;
-      const r = Math.random() * 1.5 + 0.2;
+      const r = Math.random() * 1.6 + 0.2;
       g.globalAlpha = (Math.random() * 0.8 + 0.1) * (1 - y / (LH * 0.8));
       g.fillStyle = Math.random() < 0.18 ? '#9fd8ff' : '#ffffff';
       g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
     }
     g.globalAlpha = 1;
 
-    // lua
-    const mx = LW * 0.76, my = LH * 0.16, mr = 62;
+    const mx = LW * 0.76, my = LH * 0.16, mr = 68;
     const mg = g.createRadialGradient(mx, my, 0, mx, my, mr * 5);
     mg.addColorStop(0, 'rgba(200, 222, 255, 0.34)');
     mg.addColorStop(0.35, 'rgba(140, 175, 255, 0.12)');
@@ -441,15 +451,14 @@ function buildLayers() {
     g.fillStyle = '#e2ecff';
     g.beginPath(); g.arc(mx, my, mr, 0, TAU); g.fill();
     g.fillStyle = 'rgba(178, 200, 255, 0.38)';
-    g.beginPath(); g.arc(mx - 18, my - 14, 13, 0, TAU); g.fill();
-    g.beginPath(); g.arc(mx + 20, my + 17, 8, 0, TAU); g.fill();
+    g.beginPath(); g.arc(mx - 20, my - 15, 14, 0, TAU); g.fill();
+    g.beginPath(); g.arc(mx + 22, my + 18, 9, 0, TAU); g.fill();
 
-    // nuvens
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 20; i++) {
       const x = Math.random() * LW;
       const y = LH * 0.28 + Math.random() * LH * 0.36;
-      const rw = 130 + Math.random() * 280;
-      const rh = 16 + Math.random() * 30;
+      const rw = 150 + Math.random() * 320;
+      const rh = 18 + Math.random() * 34;
       const cg = g.createRadialGradient(x, y, 0, x, y, rw);
       cg.addColorStop(0, 'rgba(95, 88, 150, 0.20)');
       cg.addColorStop(1, 'rgba(95, 88, 150, 0)');
@@ -458,7 +467,7 @@ function buildLayers() {
     }
   });
 
-  /* ---------- MONTANHAS DISTANTES ---------- */
+  /* ---------- MONTANHAS ---------- */
   mountainLayer = makeLayer(LW, LH, (g) => {
     const drawRidge = (baseY, hMin, hMax, color, k1, k2, ph) => {
       g.fillStyle = color;
@@ -473,11 +482,10 @@ function buildLayers() {
       g.closePath();
       g.fill();
     };
-    drawRidge(LH * 0.72, 40, 230, '#161a35', 2, 3, 0.4);
-    drawRidge(LH * 0.78, 25, 160, '#1b2140', 3, 5, 1.9);
-    drawRidge(LH * 0.84, 12, 100, '#212a4c', 4, 7, 3.1);
+    drawRidge(LH * 0.72, 40, 240, '#161a35', 2, 3, 0.4);
+    drawRidge(LH * 0.78, 25, 170, '#1b2140', 3, 5, 1.9);
+    drawRidge(LH * 0.84, 12, 110, '#212a4c', 4, 7, 3.1);
 
-    // névoa na base
     const fog = g.createLinearGradient(0, LH * 0.68, 0, LH * 0.95);
     fog.addColorStop(0, 'rgba(90, 120, 180, 0)');
     fog.addColorStop(0.5, 'rgba(90, 120, 180, 0.16)');
@@ -488,11 +496,11 @@ function buildLayers() {
 
   /* ---------- FLORESTA DISTANTE ---------- */
   farForest = makeLayer(LW, LH, (g) => {
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 110; i++) {
       const x = Math.random() * LW;
       const baseY = LH * 0.86;
-      const h = rand(50, 150);
-      const w = rand(16, 34);
+      const h = rand(50, 160);
+      const w = rand(18, 38);
       const col = `rgba(${randInt(18, 30)}, ${randInt(30, 48)}, ${randInt(38, 58)}, 0.85)`;
       wrap(g, LW, x, (px) => {
         g.fillStyle = col;
@@ -513,13 +521,12 @@ function buildLayers() {
 
   /* ---------- FLORESTA PRÓXIMA ---------- */
   nearForest = makeLayer(LW, LH, (g) => {
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < 48; i++) {
       const x = Math.random() * LW;
       const baseY = LH * 0.98;
-      const h = rand(200, 400);
-      const trunkW = rand(16, 34);
+      const h = rand(220, 440);
+      const trunkW = rand(18, 38);
       wrap(g, LW, x, (px) => {
-        // tronco
         const tg = g.createLinearGradient(px - trunkW, 0, px + trunkW, 0);
         tg.addColorStop(0, '#0c1118');
         tg.addColorStop(0.5, '#151d26');
@@ -533,11 +540,10 @@ function buildLayers() {
         g.closePath();
         g.fill();
 
-        // copa
-        for (let k = 0; k < 5; k++) {
-          const cx = px + rand(-70, 70);
-          const cy = baseY - h + rand(-40, 60);
-          const cr = rand(38, 78);
+        for (let k = 0; k < 6; k++) {
+          const cx = px + rand(-80, 80);
+          const cy = baseY - h + rand(-45, 70);
+          const cr = rand(42, 88);
           const fg = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
           fg.addColorStop(0, 'rgba(24, 48, 44, 0.95)');
           fg.addColorStop(1, 'rgba(10, 22, 26, 0)');
@@ -546,8 +552,7 @@ function buildLayers() {
         }
       });
     }
-    // folhas soltas
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 240; i++) {
       const x = Math.random() * LW;
       const y = LH * 0.55 + Math.random() * LH * 0.42;
       g.fillStyle = `rgba(${randInt(40, 70)}, ${randInt(80, 120)}, ${randInt(60, 90)}, ${rand(0.15, 0.5)})`;
@@ -555,14 +560,13 @@ function buildLayers() {
     }
   });
 
-  /* ---------- PRIMEIRO PLANO (folhagem) ---------- */
+  /* ---------- PRIMEIRO PLANO ---------- */
   foreLayer = makeLayer(LW, LH, (g) => {
-    // folhas grandes nas bordas superior e inferior
-    for (let i = 0; i < 26; i++) {
-      const top = i < 13;
+    for (let i = 0; i < 30; i++) {
+      const top = i < 15;
       const x = Math.random() * LW;
-      const y = top ? rand(-30, 90) : rand(LH - 130, LH + 20);
-      const r = rand(60, 150);
+      const y = top ? rand(-35, 100) : rand(LH - 145, LH + 25);
+      const r = rand(70, 170);
       const grad = g.createRadialGradient(x, y, 0, x, y, r);
       grad.addColorStop(0, 'rgba(6, 12, 10, 0.92)');
       grad.addColorStop(1, 'rgba(6, 12, 10, 0)');
@@ -571,17 +575,17 @@ function buildLayers() {
     }
   });
 
-  /* ---------- TILE DE CHÃO ---------- */
+  /* ---------- CHÃO FLORESTA ---------- */
   groundTile = makeLayer(256, 256, (g) => {
     g.fillStyle = '#18241c';
     g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 220; i++) {
       const x = Math.random() * 256, y = Math.random() * 256;
       const r = Math.random() * 12 + 3;
       g.fillStyle = `rgba(${randInt(26, 52)}, ${randInt(52, 86)}, ${randInt(36, 62)}, 0.35)`;
       g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
     }
-    for (let i = 0; i < 420; i++) {
+    for (let i = 0; i < 480; i++) {
       const x = Math.random() * 256, y = Math.random() * 256;
       g.strokeStyle = `rgba(${randInt(50, 90)}, ${randInt(100, 160)}, ${randInt(70, 110)}, ${rand(0.18, 0.5)})`;
       g.lineWidth = 1;
@@ -592,14 +596,40 @@ function buildLayers() {
     }
   });
   groundPattern = ctx.createPattern(groundTile, 'repeat');
+
+  /* ---------- CHÃO VILA ---------- */
+  villageGroundTile = makeLayer(256, 256, (g) => {
+    g.fillStyle = '#3a2f24';
+    g.fillRect(0, 0, 256, 256);
+    // paralelepípedos
+    for (let y = 0; y < 256; y += 32) {
+      for (let x = 0; x < 256; x += 32) {
+        const off = (y / 32) % 2 === 0 ? 0 : 16;
+        const px = (x + off) % 256;
+        g.fillStyle = `rgba(${randInt(60, 90)}, ${randInt(50, 75)}, ${randInt(40, 60)}, 0.9)`;
+        g.fillRect(px + 1, y + 1, 30, 30);
+        g.strokeStyle = 'rgba(20, 15, 10, 0.6)';
+        g.lineWidth = 1;
+        g.strokeRect(px + 1, y + 1, 30, 30);
+        // detalhes
+        for (let k = 0; k < 4; k++) {
+          g.fillStyle = `rgba(${randInt(40, 70)}, ${randInt(35, 55)}, ${randInt(25, 45)}, 0.4)`;
+          g.beginPath();
+          g.arc(px + rand(4, 28), y + rand(4, 28), rand(1, 3), 0, TAU);
+          g.fill();
+        }
+      }
+    }
+  });
+  villageGroundPattern = ctx.createPattern(villageGroundTile, 'repeat');
 }
 
 /* =========================================================================
-   7. DESENHO DE CAMADAS COM PARALLAX
+   7. DESENHO DE CAMADAS
    ========================================================================= */
 function drawLayer(layer, fx, fy, alpha) {
   const w = layer.width;
-  const yOff = -140 - camera.y * fy;
+  const yOff = -160 - camera.y * fy;
   let ox = -(camera.x * fx) % w;
   if (ox > 0) ox -= w;
   ctx.globalAlpha = alpha === undefined ? 1 : alpha;
@@ -637,6 +667,7 @@ class Player {
 
     this.novaCd = 0;
     this.rage = 0;
+    this.maxRage = 12;
 
     this.walkPhase = 0;
     this.moving = false;
@@ -645,7 +676,6 @@ class Player {
     this.hurtT = 0;
   }
 
-  /* ---------------- update ---------------- */
   update(dt) {
     if (this.dead) {
       this.respawnT -= dt;
@@ -662,7 +692,6 @@ class Player {
     if (this.rage > 0) this.rage = Math.max(0, this.rage - dt);
     this.mana = Math.min(this.maxMana, this.mana + 7 * dt);
 
-    // ---------- input de movimento ----------
     let ix = 0, iy = 0;
     if (keys['KeyA'] || keys['ArrowLeft']) ix--;
     if (keys['KeyD'] || keys['ArrowRight']) ix++;
@@ -673,14 +702,12 @@ class Player {
     if (mlen > 0) { ix /= mlen; iy /= mlen; }
     this.moving = mlen > 0;
 
-    // ---------- orientação ----------
     if (mouse.down) {
       this.facing = Math.atan2(mouse.wy - this.y, mouse.wx - this.x);
     } else if (this.moving) {
       this.facing = Math.atan2(iy, ix);
     }
 
-    // ---------- dash ----------
     const wantDash = keys['ShiftLeft'] || keys['ShiftRight'];
     if (wantDash && this.dashCd <= 0 && this.dashTime <= 0) {
       const dx = this.moving ? ix : Math.cos(this.facing);
@@ -691,7 +718,6 @@ class Player {
       this.invuln = Math.max(this.invuln, 0.38);
       Audio.sfx('swing');
 
-      // Relíquia: Manto do Vento Noturno → bando de corvos
       if (G.relicEquipped) {
         Audio.sfx('crow');
         for (let i = 0; i < 16; i++) {
@@ -733,11 +759,9 @@ class Player {
 
     if (this.moving) this.walkPhase += dt * 11;
 
-    // limites do mundo
-    this.x = clamp(this.x, 40, WORLD.w - 40);
-    this.y = clamp(this.y, 60, WORLD.h - 40);
+    this.x = clamp(this.x, 40, camera.worldW - 40);
+    this.y = clamp(this.y, 60, camera.worldH - 40);
 
-    // ---------- ataque ----------
     const wantAttack = keys['KeyJ'] || keys['Space'] || mouse.down;
     if (wantAttack && this.attackCd <= 0 && this.attackTime < 0) this.startAttack();
 
@@ -750,7 +774,6 @@ class Player {
         this.applyHit();
       }
 
-      // rastro de gelo da lâmina
       if (t < 0.8 && G.legendaryEquipped) {
         const ang = this.swordAngle();
         const tipX = this.x + Math.cos(ang) * 62;
@@ -766,7 +789,6 @@ class Player {
       if (t >= 1) this.attackTime = -1;
     }
 
-    // ---------- nova gélida (Q) ----------
     if (keys['KeyQ'] && this.novaCd <= 0 && this.mana >= 20) {
       this.castNova();
     }
@@ -787,7 +809,6 @@ class Player {
     this.swingDir *= -1;
     Audio.sfx('swing');
 
-    // NPCs próximos entram em pânico
     for (const n of G.npcs) {
       if (n.onPlayerAttackNear) n.onPlayerAttackNear(this);
     }
@@ -869,8 +890,8 @@ class Player {
     this.invuln = 0.6;
     camera.shake(9, 0.28);
     Audio.sfx('hurt');
-    this.x = clamp(this.x + Math.cos(ang) * 24, 40, WORLD.w - 40);
-    this.y = clamp(this.y + Math.sin(ang) * 24, 60, WORLD.h - 40);
+    this.x = clamp(this.x + Math.cos(ang) * 24, 40, camera.worldW - 40);
+    this.y = clamp(this.y + Math.sin(ang) * 24, 60, camera.worldH - 40);
     burstSparks(this.x, this.y, 12, '#ff6b6b', 260);
 
     if (this.hp <= 0) { this.hp = 0; this.die(); }
@@ -893,9 +914,7 @@ class Player {
     burstSparks(this.x, this.y, 30, '#9fe8ff', 300);
   }
 
-  /* ---------------- desenho ---------------- */
   draw(g) {
-    // sombra
     g.save();
     g.globalAlpha = 0.38;
     g.fillStyle = '#000';
@@ -914,7 +933,6 @@ class Player {
     const bob = Math.sin(this.walkPhase) * 2;
     const flip = Math.cos(this.facing) >= 0 ? 1 : -1;
 
-    // aura de fúria
     if (this.rage > 0) {
       const rg = g.createRadialGradient(this.x, this.y, 4, this.x, this.y, 52);
       rg.addColorStop(0, 'rgba(255, 60, 40, 0.28)');
@@ -923,14 +941,12 @@ class Player {
       g.beginPath(); g.arc(this.x, this.y, 52, 0, TAU); g.fill();
     }
 
-    // piscar de invulnerabilidade
     if (this.invuln > 0 && Math.floor(G.time * 22) % 2 === 0) g.globalAlpha = 0.45;
 
     g.save();
     g.translate(this.x, this.y + bob);
     g.scale(flip, 1);
 
-    // capa
     const capeSway = Math.sin(G.time * 5 + this.walkPhase) * 4;
     g.fillStyle = '#1d2a52';
     g.beginPath();
@@ -941,7 +957,6 @@ class Player {
     g.closePath();
     g.fill();
 
-    // pernas
     g.strokeStyle = '#2b3350';
     g.lineWidth = 6;
     g.lineCap = 'round';
@@ -949,7 +964,6 @@ class Player {
     g.beginPath(); g.moveTo(-4, 8); g.lineTo(-4 + legSwing, 20); g.stroke();
     g.beginPath(); g.moveTo(4, 8); g.lineTo(4 - legSwing, 20); g.stroke();
 
-    // torso
     const bg = g.createLinearGradient(-12, -18, 12, 10);
     bg.addColorStop(0, '#5a7fb5');
     bg.addColorStop(0.5, '#33507d');
@@ -959,23 +973,19 @@ class Player {
     g.roundRect(-11, -18, 22, 28, 7);
     g.fill();
 
-    // peitoral brilhante
     g.fillStyle = 'rgba(160, 210, 255, 0.35)';
     g.beginPath(); g.roundRect(-7, -14, 14, 10, 4); g.fill();
 
-    // cabeça + capuz
     g.fillStyle = '#141a2c';
     g.beginPath(); g.arc(0, -25, 11, 0, TAU); g.fill();
     g.fillStyle = '#e8c9a0';
     g.beginPath(); g.arc(1, -24, 7.5, 0, TAU); g.fill();
-    // olhos
     g.fillStyle = this.rage > 0 ? '#ff6a4a' : '#9fe8ff';
     g.beginPath(); g.arc(4, -25, 1.9, 0, TAU); g.fill();
 
     g.restore();
     g.globalAlpha = 1;
 
-    /* ---------- espada (espaço de mundo) ---------- */
     const ang = this.swordAngle();
     g.save();
     g.translate(this.x + Math.cos(this.facing) * 3, this.y - 8 + bob);
@@ -986,7 +996,6 @@ class Player {
       g.shadowBlur = 22;
     }
 
-    // lâmina
     const bladeGrad = g.createLinearGradient(8, 0, 66, 0);
     bladeGrad.addColorStop(0, '#8fd9f0');
     bladeGrad.addColorStop(0.5, '#e9fdff');
@@ -1001,7 +1010,6 @@ class Player {
     g.closePath();
     g.fill();
 
-    // lascas estilhaçadas (rachaduras mágicas)
     g.strokeStyle = 'rgba(90, 220, 255, 0.9)';
     g.lineWidth = 1.2;
     g.beginPath();
@@ -1009,14 +1017,12 @@ class Player {
     g.moveTo(44, 2.0); g.lineTo(50, -1.0);
     g.stroke();
 
-    // guarda e punho
     g.shadowBlur = 0;
     g.fillStyle = '#b39355';
     g.beginPath(); g.roundRect(4, -6, 6, 12, 2); g.fill();
     g.fillStyle = '#4a3520';
     g.beginPath(); g.roundRect(-6, -2.4, 12, 4.8, 2); g.fill();
 
-    // brilho pulsante na ponta
     if (G.legendaryEquipped) {
       const pulse = 0.55 + Math.sin(G.time * 7) * 0.35;
       g.globalCompositeOperation = 'lighter';
@@ -1030,7 +1036,6 @@ class Player {
 
     g.restore();
 
-    // flash de dano
     if (this.hitFlash > 0) {
       g.save();
       g.globalAlpha = this.hitFlash * 0.55;
@@ -1042,7 +1047,7 @@ class Player {
 }
 
 /* =========================================================================
-   9. BOSS: MORGATH, O ALGOZ DAS RAÍZES
+   9. BOSS
    ========================================================================= */
 class Morgath {
   constructor(x, y) {
@@ -1053,11 +1058,9 @@ class Morgath {
     this.phase = 1;
     this.dead = false;
     this.deathT = 0;
-
     this.state = 'idle';
     this.stateT = 0;
     this.hitDone = false;
-
     this.hitFlash = 0;
     this.spikes = [];
     this.projectiles = [];
@@ -1092,13 +1095,11 @@ class Morgath {
     const dx = p.x - this.x, dy = p.y - this.y;
     const d = Math.hypot(dx, dy) || 1;
 
-    // ------ contato corpo a corpo ------
     if (d < this.r + 20 && this.contactCd <= 0 && !p.dead) {
       p.takeDamage(this.phase === 2 ? 16 : 11, Math.atan2(p.y - this.y, p.x - this.x));
       this.contactCd = 0.9;
     }
 
-    // ------ máquina de estados ------
     switch (this.state) {
       case 'idle': {
         const spd = this.phase === 2 ? 62 : 38;
@@ -1117,7 +1118,6 @@ class Morgath {
         }
         break;
       }
-
       case 'slam': {
         if (this.stateT < 0.05 && !this.target) {
           this.target = { x: p.x, y: p.y };
@@ -1129,7 +1129,6 @@ class Morgath {
         if (this.stateT > 1.55) this.setState('idle');
         break;
       }
-
       case 'volley': {
         if (this.stateT > 0.55 && !this.hitDone) {
           this.hitDone = true;
@@ -1138,14 +1137,12 @@ class Morgath {
         if (this.stateT > 1.1) this.setState('idle');
         break;
       }
-
       case 'frenzy': {
         if (this.stateT > 1.9) this.setState('idle');
         break;
       }
     }
 
-    // ------ espinhos ------
     for (let i = this.spikes.length - 1; i >= 0; i--) {
       const s = this.spikes[i];
       s.t += dt;
@@ -1158,7 +1155,6 @@ class Morgath {
       if (s.t > 1.25) this.spikes.splice(i, 1);
     }
 
-    // ------ projéteis (raízes) ------
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const pr = this.projectiles[i];
       pr.life -= dt;
@@ -1189,7 +1185,6 @@ class Morgath {
       if (pr.life <= 0) this.projectiles.splice(i, 1);
     }
 
-    // ------ anéis de área ------
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const rg = this.rings[i];
       rg.t += dt;
@@ -1205,19 +1200,14 @@ class Morgath {
   doSlam() {
     Audio.sfx('slam');
     camera.shake(22, 0.6);
-
     const t = this.target || { x: this.x, y: this.y };
     const step = 74;
-
-    // espinhos no eixo X
     for (let x = t.x - 6 * step; x <= t.x + 6 * step; x += step) {
       this.spikes.push({ x, y: t.y, t: 0, hit: false });
     }
-    // espinhos no eixo Y
     for (let y = t.y - 4 * step; y <= t.y + 4 * step; y += step) {
       this.spikes.push({ x: t.x, y, t: 0, hit: false });
     }
-
     for (let i = 0; i < 40; i++) {
       const a = rand(0, TAU);
       P({
@@ -1269,13 +1259,8 @@ class Morgath {
     this.hp -= dmg;
     this.hitFlash = 1;
     burstSparks(this.x + rand(-50, 50), this.y + rand(-90, 10), 8, '#ffd166', 240);
-
     if (this.phase === 1 && this.hp <= this.maxHp * 0.5) this.enterPhase2();
-
-    if (this.hp <= 0) {
-      this.hp = 0;
-      this.die();
-    }
+    if (this.hp <= 0) { this.hp = 0; this.die(); }
   }
 
   enterPhase2() {
@@ -1285,7 +1270,6 @@ class Morgath {
     Audio.sfx('slam');
     this.setState('frenzy');
     this.doFrenzy();
-
     for (let i = 0; i < 120; i++) {
       const a = rand(0, TAU);
       P({
@@ -1306,7 +1290,6 @@ class Morgath {
     Audio.tempo = 0.8;
     Audio.sfx('die');
     camera.shake(30, 1.6);
-
     for (let i = 0; i < 160; i++) {
       const a = rand(0, TAU);
       P({
@@ -1323,21 +1306,18 @@ class Morgath {
     document.getElementById('bossbar').classList.add('hidden');
   }
 
-  /* ---------------- desenho ---------------- */
   draw(g) {
     const t = G.time;
     const p2 = this.phase === 2;
     const glowColor = p2 ? '#ff5a3c' : '#7dff9b';
     const bodyColor = p2 ? '#3a1f1a' : '#2e2318';
 
-    // sombra
     g.save();
     g.globalAlpha = 0.45;
     g.fillStyle = '#000';
     g.beginPath(); g.ellipse(this.x, this.y + this.r * 0.55, this.r * 1.2, this.r * 0.42, 0, 0, TAU); g.fill();
     g.restore();
 
-    // aura da fase 2
     if (p2) {
       const ag = g.createRadialGradient(this.x, this.y - 60, 0, this.x, this.y - 60, 240);
       ag.addColorStop(0, 'rgba(255, 70, 40, 0.16)');
@@ -1356,7 +1336,6 @@ class Morgath {
 
     const breathe = Math.sin(t * 1.6) * 6;
 
-    // raízes / pernas
     g.strokeStyle = '#1a1208';
     g.lineWidth = 18;
     g.lineCap = 'round';
@@ -1371,7 +1350,6 @@ class Morgath {
       g.stroke();
     }
 
-    // tronco
     g.fillStyle = bodyColor;
     g.beginPath();
     g.moveTo(-72, 60);
@@ -1381,7 +1359,6 @@ class Morgath {
     g.closePath();
     g.fill();
 
-    // casca
     g.strokeStyle = 'rgba(0,0,0,0.35)';
     g.lineWidth = 4;
     for (let i = -2; i <= 2; i++) {
@@ -1391,7 +1368,6 @@ class Morgath {
       g.stroke();
     }
 
-    // musgo
     g.fillStyle = p2 ? 'rgba(140, 50, 40, 0.4)' : 'rgba(80, 160, 90, 0.35)';
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * TAU;
@@ -1400,7 +1376,6 @@ class Morgath {
       g.fill();
     }
 
-    // braços
     const swingT = this.state === 'slam' ? Math.min(1, this.stateT / 0.95) : 0;
     const swing = Math.sin(swingT * Math.PI) * 1.25 + Math.sin(t * 1.2) * 0.12;
     for (let s = -1; s <= 1; s += 2) {
@@ -1418,11 +1393,9 @@ class Morgath {
       g.restore();
     }
 
-    // cabeça
     g.fillStyle = '#241a10';
     g.beginPath(); g.ellipse(0, -142 + breathe, 47, 41, 0, 0, TAU); g.fill();
 
-    // galhos da coroa
     g.strokeStyle = '#241a10';
     g.lineWidth = 7;
     for (let s = -1; s <= 1; s += 2) {
@@ -1436,7 +1409,6 @@ class Morgath {
       g.stroke();
     }
 
-    // olhos
     g.save();
     g.shadowColor = glowColor;
     g.shadowBlur = 32;
@@ -1445,7 +1417,6 @@ class Morgath {
     g.beginPath(); g.ellipse(17, -148 + breathe, 9, 5.5, -0.22, 0, TAU); g.fill();
     g.restore();
 
-    // flash de dano
     if (this.hitFlash > 0.01) {
       g.globalAlpha = this.hitFlash * 0.35;
       g.fillStyle = '#ffffff';
@@ -1457,7 +1428,6 @@ class Morgath {
 
     g.restore();
 
-    // ------ telegrafia do slam ------
     if (this.state === 'slam' && this.target) {
       const prog = Math.min(1, this.stateT / 0.95);
       g.save();
@@ -1478,7 +1448,6 @@ class Morgath {
       g.restore();
     }
 
-    // ------ espinhos ------
     for (const s of this.spikes) {
       const rise = Math.min(1, s.t / 0.16);
       const fall = Math.max(0, (s.t - 0.85) / 0.4);
@@ -1503,7 +1472,6 @@ class Morgath {
       g.restore();
     }
 
-    // ------ projéteis ------
     for (const pr of this.projectiles) {
       g.save();
       g.shadowColor = glowColor;
@@ -1513,7 +1481,6 @@ class Morgath {
       g.restore();
     }
 
-    // ------ anéis ------
     for (const rg of this.rings) {
       g.save();
       g.globalAlpha = clamp(1 - rg.r / 620, 0, 1) * 0.8;
@@ -1528,8 +1495,6 @@ class Morgath {
 /* =========================================================================
    10. INIMIGOS
    ========================================================================= */
-
-/* ---------- Espreitador de Musgo ---------- */
 class MossStalker {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -1559,7 +1524,7 @@ class MossStalker {
     switch (this.state) {
       case 'hide': {
         this.alpha = lerp(this.alpha, 0.12 + Math.sin(this.t * 2) * 0.03, dt * 3);
-        if (d < 300 && !p.dead) {
+        if (d < 320 && !p.dead) {
           this.state = 'chase';
           burstSparks(this.x, this.y, 16, '#7dff9b', 200);
           Audio.sfx('crow');
@@ -1599,8 +1564,8 @@ class MossStalker {
       }
     }
 
-    this.x = clamp(this.x, 30, WORLD.w - 30);
-    this.y = clamp(this.y, 30, WORLD.h - 30);
+    this.x = clamp(this.x, 30, camera.worldW - 30);
+    this.y = clamp(this.y, 30, camera.worldH - 30);
   }
 
   takeDamage(dmg, ang) {
@@ -1631,7 +1596,6 @@ class MossStalker {
   draw(g) {
     if (this.dead) return;
     const bob = Math.sin(this.t * 6) * 2;
-
     g.save();
     g.globalAlpha = 0.3 * this.alpha;
     g.fillStyle = '#000';
@@ -1642,9 +1606,6 @@ class MossStalker {
     g.globalAlpha = this.alpha;
     g.translate(this.x, this.y - this.z + bob);
 
-    const fx = Math.cos(Math.atan2(0, 1)) >= 0 ? 1 : 1;
-
-    // corpo lupino
     const bodyGrad = g.createLinearGradient(0, -20, 0, 20);
     bodyGrad.addColorStop(0, '#3d5c34');
     bodyGrad.addColorStop(1, '#1b2a18');
@@ -1653,7 +1614,6 @@ class MossStalker {
     g.ellipse(0, 0, 24, 14, 0, 0, TAU);
     g.fill();
 
-    // patas
     g.strokeStyle = '#16200f';
     g.lineWidth = 4;
     g.lineCap = 'round';
@@ -1661,21 +1621,17 @@ class MossStalker {
       g.beginPath(); g.moveTo(i * 10, 8); g.lineTo(i * 14, 18); g.stroke();
     }
 
-    // cabeça
     g.fillStyle = '#33502c';
     g.beginPath(); g.ellipse(20, -6, 12, 10, 0.2, 0, TAU); g.fill();
-    // orelhas
     g.fillStyle = '#22381d';
     g.beginPath(); g.moveTo(16, -14); g.lineTo(20, -24); g.lineTo(25, -12); g.closePath(); g.fill();
 
-    // olhos brilhantes
     g.shadowColor = '#a8ff7d';
     g.shadowBlur = 16;
     g.fillStyle = '#c6ff9a';
     g.beginPath(); g.arc(24, -8, 2.4, 0, TAU); g.fill();
     g.shadowBlur = 0;
 
-    // tufos de musgo
     g.fillStyle = 'rgba(110, 200, 110, 0.45)';
     for (let i = 0; i < 5; i++) {
       g.beginPath();
@@ -1694,7 +1650,6 @@ class MossStalker {
   }
 }
 
-/* ---------- Golem de Vidro Amaldiçoado ---------- */
 class GlassGolem {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -1722,7 +1677,6 @@ class GlassGolem {
     const d = Math.hypot(dx, dy) || 1;
 
     if (this.state === 'idle') {
-      // flutua mantendo distância
       const ideal = 260;
       const spd = (d > ideal + 40 ? 74 : d < ideal - 60 ? -70 : 0) * (this.slow > 0 ? 0.5 : 1);
       this.x += (dx / d) * spd * dt;
@@ -1749,8 +1703,8 @@ class GlassGolem {
       }
     }
 
-    this.x = clamp(this.x, 30, WORLD.w - 30);
-    this.y = clamp(this.y, 30, WORLD.h - 30);
+    this.x = clamp(this.x, 30, camera.worldW - 30);
+    this.y = clamp(this.y, 30, camera.worldH - 30);
   }
 
   fire() {
@@ -1761,7 +1715,6 @@ class GlassGolem {
     const ex = this.x + Math.cos(a) * len;
     const ey = this.y + Math.sin(a) * len;
 
-    // dano por distância ao segmento
     const p = player;
     const t = clamp(((p.x - this.x) * Math.cos(a) + (p.y - this.y) * Math.sin(a)) / len, 0, 1);
     const px = this.x + Math.cos(a) * len * t;
@@ -1813,7 +1766,6 @@ class GlassGolem {
     g.save();
     g.translate(this.x, this.y + float);
 
-    // telegrafia do feixe
     if (this.state === 'charge') {
       const prog = Math.min(1, this.stateT / 1.15);
       g.save();
@@ -1829,7 +1781,6 @@ class GlassGolem {
       g.restore();
     }
 
-    // corpo cristalino
     const cg = g.createLinearGradient(-26, -34, 26, 34);
     cg.addColorStop(0, 'rgba(180, 240, 255, 0.9)');
     cg.addColorStop(0.45, 'rgba(90, 160, 220, 0.75)');
@@ -1850,7 +1801,6 @@ class GlassGolem {
 
     g.shadowBlur = 0;
 
-    // facetas
     g.strokeStyle = 'rgba(255,255,255,0.5)';
     g.lineWidth = 1.4;
     g.beginPath();
@@ -1859,7 +1809,6 @@ class GlassGolem {
     g.moveTo(24, -12); g.lineTo(-20, 22);
     g.stroke();
 
-    // núcleo
     const pulse = 0.7 + Math.sin(this.t * 6) * 0.3;
     g.globalCompositeOperation = 'lighter';
     const ng = g.createRadialGradient(0, 0, 0, 0, 0, 26);
@@ -1877,7 +1826,6 @@ class GlassGolem {
 
     g.restore();
 
-    // feixe ativo
     if (this.state === 'fire') {
       g.save();
       g.globalCompositeOperation = 'lighter';
@@ -1909,8 +1857,6 @@ class GlassGolem {
 /* =========================================================================
    11. NPCs
    ========================================================================= */
-
-/* ---------- Galdur, o Colecionador de Restos ---------- */
 class Galdur {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -1950,7 +1896,6 @@ class Galdur {
     g.beginPath(); g.ellipse(this.x, this.y + 16, 20, 7, 0, 0, TAU); g.fill();
     g.restore();
 
-    // lanternas orbitando
     for (const l of this.lanterns) {
       const lx = this.x + Math.cos(l.a) * l.rad + shake;
       const ly = this.y - 34 + Math.sin(l.a) * 16 + bob;
@@ -1970,26 +1915,21 @@ class Galdur {
     g.save();
     g.translate(this.x + shake, this.y + bob);
 
-    // mochila gigante
     g.fillStyle = '#4a3520';
     g.beginPath(); g.ellipse(-6, -4, 24, 26, 0, 0, TAU); g.fill();
     g.fillStyle = '#5c4326';
     g.beginPath(); g.ellipse(-6, -10, 19, 16, 0, 0, TAU); g.fill();
 
-    // corpo goblin
     g.fillStyle = '#5d7a4a';
     g.beginPath(); g.ellipse(6, 4, 13, 15, 0, 0, TAU); g.fill();
 
-    // cabeça
     g.fillStyle = '#6d8f57';
     g.beginPath(); g.arc(10, -16, 11, 0, TAU); g.fill();
 
-    // orelhas
     g.fillStyle = '#5d7a4a';
     g.beginPath(); g.moveTo(2, -20); g.lineTo(-9, -28); g.lineTo(4, -26); g.closePath(); g.fill();
     g.beginPath(); g.moveTo(18, -20); g.lineTo(29, -28); g.lineTo(16, -26); g.closePath(); g.fill();
 
-    // olhos
     g.fillStyle = this.panic > 0 ? '#ffffff' : '#ffe066';
     const eyeR = this.panic > 0 ? 4 : 2.4;
     g.beginPath(); g.arc(7, -18, eyeR, 0, TAU); g.fill();
@@ -1999,7 +1939,6 @@ class Galdur {
       g.fillStyle = '#000';
       g.beginPath(); g.arc(7, -18, 1.6, 0, TAU); g.fill();
       g.beginPath(); g.arc(15, -18, 1.6, 0, TAU); g.fill();
-      // gotas de suor
       g.fillStyle = 'rgba(160, 220, 255, 0.85)';
       g.beginPath(); g.arc(22, -24 + Math.sin(this.t * 12) * 2, 2.2, 0, TAU); g.fill();
     }
@@ -2008,7 +1947,6 @@ class Galdur {
   }
 }
 
-/* ---------- Elara, a Cavaleira Desonrada ---------- */
 class Elara {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -2018,7 +1956,6 @@ class Elara {
   }
 
   update(dt) { this.t += dt; }
-
   interact() { Dialogue.start(DIALOGUES.elara); }
 
   draw(g) {
@@ -2028,14 +1965,12 @@ class Elara {
     g.beginPath(); g.ellipse(this.x, this.y + 16, 20, 7, 0, 0, TAU); g.fill();
     g.restore();
 
-    // luz da fogueira
     const fg = g.createRadialGradient(this.x + 30, this.y + 4, 0, this.x + 30, this.y + 4, 110);
     fg.addColorStop(0, 'rgba(255, 160, 60, 0.22)');
     fg.addColorStop(1, 'rgba(255, 160, 60, 0)');
     g.fillStyle = fg;
     g.beginPath(); g.arc(this.x + 30, this.y + 4, 110, 0, TAU); g.fill();
 
-    // fogueira
     const flick = Math.sin(this.t * 14) * 3;
     g.save();
     g.globalCompositeOperation = 'lighter';
@@ -2050,11 +1985,9 @@ class Elara {
     g.save();
     g.translate(this.x, this.y);
 
-    // corpo ajoelhado
     g.fillStyle = '#3a4058';
     g.beginPath(); g.roundRect(-12, -12, 24, 26, 8); g.fill();
 
-    // capa
     g.fillStyle = '#5a2a2a';
     g.beginPath();
     g.moveTo(-12, -10);
@@ -2064,14 +1997,12 @@ class Elara {
     g.closePath();
     g.fill();
 
-    // cabeça com cabelo ruivo
     g.fillStyle = '#e8c9a0';
     g.beginPath(); g.arc(0, -22, 9.5, 0, TAU); g.fill();
     g.fillStyle = '#a8442a';
     g.beginPath(); g.arc(0, -25, 10, Math.PI, TAU); g.fill();
     g.beginPath(); g.ellipse(-8, -22, 4, 9, 0.2, 0, TAU); g.fill();
 
-    // escudo enferrujado sendo polido
     const polish = Math.sin(this.t * 3.2);
     g.save();
     g.translate(16, 2);
@@ -2086,7 +2017,6 @@ class Elara {
     g.beginPath(); g.arc(4, 5, 2.6, 0, TAU); g.fill();
     g.restore();
 
-    // braço polindo (movimento circular)
     g.strokeStyle = '#2c3248';
     g.lineWidth = 5;
     g.lineCap = 'round';
@@ -2095,7 +2025,6 @@ class Elara {
     g.lineTo(14 + polish * 5, 4 + Math.cos(this.t * 3.2) * 4);
     g.stroke();
 
-    // brilho do polimento
     if (polish > 0.6) {
       g.save();
       g.globalCompositeOperation = 'lighter';
@@ -2112,7 +2041,87 @@ class Elara {
 }
 
 /* =========================================================================
-   12. DIÁLOGOS
+   12. PORTAL (transição de mapa)
+   ========================================================================= */
+class Portal {
+  constructor(x, y, targetMap, label) {
+    this.x = x; this.y = y;
+    this.targetMap = targetMap;
+    this.label = label;
+    this.r = 40;
+    this.t = 0;
+  }
+  update(dt) { this.t += dt; }
+  draw(g) {
+    const pulse = 0.6 + Math.sin(this.t * 3) * 0.4;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+
+    const gg = g.createRadialGradient(this.x, this.y, 0, this.x, this.y, 90);
+    gg.addColorStop(0, `rgba(120, 220, 255, ${0.35 * pulse})`);
+    gg.addColorStop(0.6, `rgba(80, 160, 255, ${0.15 * pulse})`);
+    gg.addColorStop(1, 'rgba(40, 80, 200, 0)');
+    g.fillStyle = gg;
+    g.beginPath(); g.arc(this.x, this.y, 90, 0, TAU); g.fill();
+
+    g.strokeStyle = `rgba(180, 240, 255, ${0.7 * pulse})`;
+    g.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      const r = 30 + i * 12 + Math.sin(this.t * 2 + i) * 4;
+      g.beginPath();
+      g.ellipse(this.x, this.y, r, r * 0.55, this.t * 0.5, 0, TAU);
+      g.stroke();
+    }
+
+    g.restore();
+
+    // Rótulo
+    g.save();
+    g.font = 'bold 16px Georgia';
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(200, 235, 255, 0.95)';
+    g.shadowColor = 'rgba(0,0,0,0.9)';
+    g.shadowBlur = 8;
+    g.fillText(this.label, this.x, this.y - 62);
+    g.restore();
+  }
+}
+
+/* =========================================================================
+   13. MAPAS
+   ========================================================================= */
+const MAPS = [
+  {
+    name: 'VILA DE AETHEL',
+    sub: 'Refúgio dos sobreviventes',
+    worldW: 2200, worldH: 1500,
+    spawn: { x: 500, y: 900 },
+    groundPattern: 'village',
+    sky: false,  // usa chão de vila, sem parallax de floresta pesado
+    enemies: [],
+    npcs: ['galdur', 'elara'],
+    portals: [{ x: 1950, y: 750, target: 1, label: '→ FLORESTA SOMBRIA' }]
+  },
+  {
+    name: 'FLORESTA SOMBRIA',
+    sub: 'Onde as raízes respiram',
+    worldW: 3200, worldH: 2000,
+    spawn: { x: 300, y: 900 },
+    groundPattern: 'forest',
+    sky: true,
+    enemies: ['stalker', 'stalker', 'golem', 'stalker', 'golem'],
+    npcs: [],
+    portals: [{ x: 200, y: 900, target: 0, label: '← VILA DE AETHEL' }],
+    boss: { x: 2500, y: 950 }
+  }
+];
+
+let boss = null;
+let player = null;
+let galdur = null, elara = null;
+
+/* =========================================================================
+   14. DIÁLOGOS
    ========================================================================= */
 const DIALOGUES = {
   galdur: {
@@ -2156,7 +2165,6 @@ const DIALOGUES = {
       }
     }
   },
-
   elara: {
     speaker: 'Elara, a Cavaleira Desonrada',
     color: '#8fb6e8',
@@ -2206,7 +2214,7 @@ const DIALOGUES = {
 };
 
 /* =========================================================================
-   13. SISTEMA DE DIÁLOGO (UI HTML sobreposta)
+   15. DIÁLOGO — CORRIGIDO
    ========================================================================= */
 const Dialogue = {
   active: false,
@@ -2292,7 +2300,7 @@ const Dialogue = {
 };
 
 /* =========================================================================
-   14. INVENTÁRIO / CONSUMÍVEIS
+   16. INVENTÁRIO / POÇÕES
    ========================================================================= */
 function toggleInventory() {
   const inv = document.getElementById('inventory');
@@ -2308,12 +2316,13 @@ function toggleInventory() {
 }
 
 function usePotion() {
-  if (G.potions <= 0) return;
+  if (G.potions <= 0 || !player || player.dead) return;
   G.potions--;
   document.getElementById('potioncount').textContent = G.potions;
+  document.getElementById('potioncountinv').textContent = G.potions;
 
   player.hp = Math.min(player.maxHp, player.hp + 22);
-  player.rage = 9;
+  player.rage = Math.min(player.maxRage, player.rage + 9);
   player.invuln = Math.max(player.invuln, 0.4);
 
   Audio.sfx('drink');
@@ -2334,10 +2343,11 @@ function usePotion() {
 }
 
 /* =========================================================================
-   15. INTERAÇÃO COM NPCs
+   17. INTERAÇÃO
    ========================================================================= */
 function tryInteract() {
-  let best = null, bestD = 110;
+  if (G.paused || G.transitioning || !player || player.dead) return;
+  let best = null, bestD = 130;
   for (const n of G.npcs) {
     const d = Math.hypot(n.x - player.x, n.y - player.y);
     if (d < bestD) { bestD = d; best = n; }
@@ -2346,38 +2356,239 @@ function tryInteract() {
 }
 
 /* =========================================================================
-   16. INSTANCIAÇÃO DO MUNDO
+   18. SISTEMA DE MAPAS
    ========================================================================= */
-let player, boss;
-let galdur, elara;
+const MapSystem = {
+  current: 0,
+  transitionCooldown: 0,
 
-function setupWorld() {
-  player = new Player(SPAWN.x, SPAWN.y);
-  boss = new Morgath(2350, 820);
+  load(index) {
+    this.current = index;
+    G.currentMap = index;
+    G.transitioning = true;
+    G.paused = true;
 
-  G.enemies = [
-    new MossStalker(1250, 520),
-    new MossStalker(1720, 1320),
-    new MossStalker(950, 1420),
-    new MossStalker(2050, 1250),
-    new GlassGolem(1900, 420),
-    new GlassGolem(620, 1080)
-  ];
+    const map = MAPS[index];
+    camera.worldW = map.worldW;
+    camera.worldH = map.worldH;
 
-  galdur = new Galdur(520, 760);
-  elara = new Elara(860, 1160);
-  G.npcs = [galdur, elara];
+    // limpa entidades antigas
+    G.enemies = [];
+    G.npcs = [];
+    G.portals = [];
+    boss = null;
+    particles.length = 0;
 
-  camera.x = clamp(player.x - VW / 2, 0, WORLD.w - VW);
-  camera.y = clamp(player.y - VH / 2, 0, WORLD.h - VH);
+    // posiciona jogador
+    if (!player) player = new Player(map.spawn.x, map.spawn.y);
+    else {
+      player.x = map.spawn.x;
+      player.y = map.spawn.y;
+      player.vx = 0; player.vy = 0;
+      player.invuln = 1.5;
+    }
+
+    // spawn de NPCs
+    if (index === 0) {
+      galdur = new Galdur(520, 760);
+      elara = new Elara(860, 1160);
+      G.npcs = [galdur, elara];
+    } else {
+      galdur = null; elara = null;
+    }
+
+    // spawn de inimigos
+    if (index === 1) {
+      G.enemies = [
+        new MossStalker(900, 500),
+        new MossStalker(1400, 1400),
+        new GlassGolem(1800, 700),
+        new MossStalker(1200, 1100),
+        new GlassGolem(2100, 1300)
+      ];
+      boss = new Morgath(2500, 950);
+    }
+
+    // portais
+    for (const p of map.portals) {
+      G.portals.push(new Portal(p.x, p.y, p.target, p.label));
+    }
+
+    // câmera
+    camera.x = clamp(player.x - VW / 2, 0, map.worldW - VW);
+    camera.y = clamp(player.y - VH / 2, 0, map.worldH - VH);
+
+    // HUD do mapa
+    document.getElementById('maptitle').textContent = map.name;
+    document.getElementById('mapsub').textContent = map.sub;
+
+    // flash de transição
+    showTransition(map.name, map.sub, () => {
+      G.transitioning = false;
+      G.paused = false;
+    });
+
+    Audio.sfx('portal');
+  },
+
+  update(dt) {
+    if (this.transitionCooldown > 0) this.transitionCooldown -= dt;
+
+    for (const p of G.portals) {
+      p.update(dt);
+      if (this.transitionCooldown <= 0 &&
+          Math.hypot(player.x - p.x, player.y - p.y) < p.r) {
+        this.transitionCooldown = 2;
+        this.load(p.targetMap);
+        return;
+      }
+    }
+  }
+};
+
+function showTransition(name, sub, done) {
+  const trans = document.getElementById('transition');
+  document.getElementById('transname').textContent = name;
+  document.getElementById('transsub').textContent = sub;
+  trans.classList.remove('hidden');
+  setTimeout(() => {
+    trans.classList.add('hidden');
+    setTimeout(() => { if (done) done(); }, 400);
+  }, 1500);
 }
 
 /* =========================================================================
-   17. ÁGUA / REFLEXOS
+   19. HUD — minimapa e atualizações
+   ========================================================================= */
+const hudCache = { hp: -1, mana: -1, rage: -1, boss: -1, potions: -1 };
+let hudEls = null;
+let minimapCanvas, minimapCtx;
+
+function initHUD() {
+  hudEls = {
+    hpfill: document.getElementById('hpfill'),
+    hptext: document.getElementById('hptext'),
+    manafill: document.getElementById('manafill'),
+    manatext: document.getElementById('manatext'),
+    ragefill: document.getElementById('ragefill'),
+    bossfill: document.getElementById('bossfill'),
+    bossbar: document.getElementById('bossbar'),
+    rage: document.getElementById('rageoverlay')
+  };
+  minimapCanvas = document.getElementById('minimap');
+  minimapCtx = minimapCanvas.getContext('2d');
+}
+
+function updateHUD() {
+  if (!hudEls || !player) return;
+
+  const hp = Math.round(player.hp);
+  if (hp !== hudCache.hp) {
+    hudCache.hp = hp;
+    hudEls.hpfill.style.width = (hp / player.maxHp * 100) + '%';
+    hudEls.hptext.textContent = `${hp} / ${player.maxHp}`;
+  }
+
+  const mp = Math.round(player.mana);
+  if (mp !== hudCache.mana) {
+    hudCache.mana = mp;
+    hudEls.manafill.style.width = (mp / player.maxMana * 100) + '%';
+    hudEls.manatext.textContent = `${mp} / ${player.maxMana}`;
+  }
+
+  const ragePct = Math.round(player.rage / player.maxRage * 100);
+  if (ragePct !== hudCache.rage) {
+    hudCache.rage = ragePct;
+    hudEls.ragefill.style.width = ragePct + '%';
+  }
+
+  const engaged = boss && !boss.dead &&
+    Math.hypot(boss.x - player.x, boss.y - player.y) < 1000;
+  G.bossEngaged = !!engaged;
+  hudEls.bossbar.classList.toggle('hidden', !engaged);
+
+  if (engaged) {
+    const pct = Math.round(boss.hp / boss.maxHp * 100);
+    if (pct !== hudCache.boss) {
+      hudCache.boss = pct;
+      hudEls.bossfill.style.width = pct + '%';
+    }
+  }
+
+  hudEls.rage.classList.toggle('on', player.rage > 0);
+}
+
+function drawMinimap() {
+  if (!minimapCtx || !player) return;
+  const mw = minimapCanvas.width, mh = minimapCanvas.height;
+  const map = MAPS[MapSystem.current];
+  const sx = mw / map.worldW, sy = mh / map.worldH;
+
+  minimapCtx.clearRect(0, 0, mw, mh);
+
+  // fundo
+  minimapCtx.fillStyle = 'rgba(20, 28, 40, 0.85)';
+  minimapCtx.fillRect(0, 0, mw, mh);
+
+  // chão
+  minimapCtx.fillStyle = MapSystem.current === 0 ? 'rgba(70, 55, 40, 0.7)' : 'rgba(24, 40, 30, 0.7)';
+  minimapCtx.fillRect(2, 2, mw - 4, mh - 4);
+
+  // portais
+  for (const p of G.portals) {
+    minimapCtx.fillStyle = 'rgba(120, 220, 255, 0.9)';
+    minimapCtx.beginPath();
+    minimapCtx.arc(p.x * sx, p.y * sy, 3, 0, TAU);
+    minimapCtx.fill();
+  }
+
+  // NPCs
+  for (const n of G.npcs) {
+    minimapCtx.fillStyle = 'rgba(255, 210, 120, 0.95)';
+    minimapCtx.beginPath();
+    minimapCtx.arc(n.x * sx, n.y * sy, 2.5, 0, TAU);
+    minimapCtx.fill();
+  }
+
+  // inimigos
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    minimapCtx.fillStyle = 'rgba(255, 90, 60, 0.9)';
+    minimapCtx.beginPath();
+    minimapCtx.arc(e.x * sx, e.y * sy, 2, 0, TAU);
+    minimapCtx.fill();
+  }
+
+  // boss
+  if (boss && !boss.dead) {
+    minimapCtx.fillStyle = 'rgba(255, 50, 30, 1)';
+    minimapCtx.beginPath();
+    minimapCtx.arc(boss.x * sx, boss.y * sy, 4, 0, TAU);
+    minimapCtx.fill();
+  }
+
+  // jogador (com seta de direção)
+  const px = player.x * sx, py = player.y * sy;
+  minimapCtx.save();
+  minimapCtx.translate(px, py);
+  minimapCtx.rotate(player.facing);
+  minimapCtx.fillStyle = 'rgba(200, 240, 255, 1)';
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(4, 0);
+  minimapCtx.lineTo(-3, -3);
+  minimapCtx.lineTo(-3, 3);
+  minimapCtx.closePath();
+  minimapCtx.fill();
+  minimapCtx.restore();
+}
+
+/* =========================================================================
+   20. ÁGUA
    ========================================================================= */
 const pond = { x: 1330, y: 1400, rx: 330, ry: 140 };
 
 function drawWater(g) {
+  if (MapSystem.current !== 1) return;
   g.save();
   g.beginPath();
   g.ellipse(pond.x, pond.y, pond.rx, pond.ry, 0, 0, TAU);
@@ -2390,7 +2601,6 @@ function drawWater(g) {
   g.fillStyle = wg;
   g.fillRect(pond.x - pond.rx, pond.y - pond.ry, pond.rx * 2, pond.ry * 2);
 
-  // reflexos cintilantes
   g.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 26; i++) {
     const t = G.time * 1.2 + i * 0.7;
@@ -2406,7 +2616,6 @@ function drawWater(g) {
   g.globalAlpha = 1;
   g.globalCompositeOperation = 'source-over';
 
-  // reflexo do jogador
   if (player && !player.dead) {
     const rx = pond.x + (player.x - pond.x) * 0.35;
     const ry = pond.y + (pond.y - player.y) * 0.18;
@@ -2420,7 +2629,6 @@ function drawWater(g) {
 
   g.restore();
 
-  // borda da água
   g.save();
   g.strokeStyle = 'rgba(120, 190, 240, 0.28)';
   g.lineWidth = 3;
@@ -2431,14 +2639,14 @@ function drawWater(g) {
 }
 
 /* =========================================================================
-   18. ILUMINAÇÃO DINÂMICA
+   21. ILUMINAÇÃO
    ========================================================================= */
 function drawLighting() {
   const p2 = boss && boss.phase === 2 && !boss.dead;
 
   lctx.setTransform(1, 0, 0, 1, 0, 0);
   lctx.globalCompositeOperation = 'source-over';
-  lctx.fillStyle = p2 ? 'rgba(26, 2, 6, 0.86)' : 'rgba(4, 6, 18, 0.80)';
+  lctx.fillStyle = p2 ? 'rgba(26, 2, 6, 0.86)' : 'rgba(4, 6, 18, 0.78)';
   lctx.fillRect(0, 0, VW, VH);
 
   lctx.globalCompositeOperation = 'destination-out';
@@ -2456,18 +2664,15 @@ function drawLighting() {
     lctx.fill();
   };
 
-  // luz do jogador
   if (player && !player.dead) {
-    lightAt(player.x, player.y - 10, 210, 0.95);
-    lightAt(player.x, player.y - 10, 90, 0.7);
+    lightAt(player.x, player.y - 10, 240, 0.95);
+    lightAt(player.x, player.y - 10, 100, 0.7);
   }
 
-  // luz do boss
   if (boss && !boss.dead) {
     lightAt(boss.x, boss.y - 70, p2 ? 320 : 260, 0.85);
   }
 
-  // lanternas do Galdur
   if (galdur) {
     for (const l of galdur.lanterns) {
       lightAt(
@@ -2478,18 +2683,20 @@ function drawLighting() {
     }
   }
 
-  // fogueira da Elara
   if (elara) lightAt(elara.x + 34, elara.y + 6, 190, 0.8);
 
-  // golems
   for (const e of G.enemies) {
     if (e instanceof GlassGolem && !e.dead) lightAt(e.x, e.y, 130, 0.5);
+  }
+
+  for (const p of G.portals) {
+    lightAt(p.x, p.y, 130, 0.7);
   }
 
   lctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(lightCanvas, 0, 0);
 
-  // ---------- brilhos aditivos coloridos ----------
+  // brilhos aditivos
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
 
@@ -2519,84 +2726,58 @@ function drawLighting() {
 }
 
 /* =========================================================================
-   19. HUD (atualização DOM)
-   ========================================================================= */
-const hudCache = { hp: -1, mana: -1, boss: -1 };
-let hudEls = null;
-
-function initHUD() {
-  hudEls = {
-    hpfill: document.getElementById('hpfill'),
-    hptext: document.getElementById('hptext'),
-    manafill: document.getElementById('manafill'),
-    manatext: document.getElementById('manatext'),
-    bossfill: document.getElementById('bossfill'),
-    bossbar: document.getElementById('bossbar'),
-    rage: document.getElementById('rageoverlay')
-  };
-}
-
-function updateHUD() {
-  if (!hudEls) return;
-
-  const hp = Math.round(player.hp);
-  if (hp !== hudCache.hp) {
-    hudCache.hp = hp;
-    hudEls.hpfill.style.width = (hp / player.maxHp * 100) + '%';
-    hudEls.hptext.textContent = `${hp} / ${player.maxHp}`;
-  }
-
-  const mp = Math.round(player.mana);
-  if (mp !== hudCache.mana) {
-    hudCache.mana = mp;
-    hudEls.manafill.style.width = (mp / player.maxMana * 100) + '%';
-    hudEls.manatext.textContent = `${mp} / ${player.maxMana}`;
-  }
-
-  const engaged = boss && !boss.dead &&
-    Math.hypot(boss.x - player.x, boss.y - player.y) < 1000;
-  G.bossEngaged = !!engaged;
-  hudEls.bossbar.classList.toggle('hidden', !engaged);
-
-  if (engaged) {
-    const pct = Math.round(boss.hp / boss.maxHp * 100);
-    if (pct !== hudCache.boss) {
-      hudCache.boss = pct;
-      hudEls.bossfill.style.width = pct + '%';
-    }
-  }
-
-  hudEls.rage.classList.toggle('on', player.rage > 0);
-}
-
-/* =========================================================================
-   20. RENDERIZAÇÃO PRINCIPAL
+   22. RENDERIZAÇÃO
    ========================================================================= */
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, VW, VH);
 
-  // ---------- céu e parallax de fundo ----------
-  drawLayer(skyLayer, 0.03, 0.03, 0.9);
-  drawLayer(mountainLayer, 0.12, 0.05, 1);
-  drawLayer(farForest, 0.28, 0.08, 1);
-  drawLayer(nearForest, 0.55, 0.12, 1);
+  const map = MAPS[MapSystem.current];
+
+  // fundo
+  if (map.sky) {
+    drawLayer(skyLayer, 0.03, 0.03, 0.9);
+    drawLayer(mountainLayer, 0.12, 0.05, 1);
+    drawLayer(farForest, 0.28, 0.08, 1);
+    drawLayer(nearForest, 0.55, 0.12, 1);
+  } else {
+    // vila — céu noturno mais simples
+    const grad = ctx.createLinearGradient(0, 0, 0, VH);
+    grad.addColorStop(0, '#0a0d20');
+    grad.addColorStop(0.5, '#1a1d38');
+    grad.addColorStop(1, '#2a2540');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // estrelas
+    ctx.save();
+    for (let i = 0; i < 80; i++) {
+      const x = (i * 173 + 40) % VW;
+      const y = (i * 97) % (VH * 0.6);
+      const tw = 0.4 + Math.abs(Math.sin(G.time + i)) * 0.6;
+      ctx.globalAlpha = tw;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x - camera.x * 0.05, y, 1.2, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 
   const camX = camera.x - camera.shakeX;
   const camY = camera.y - camera.shakeY;
 
-  // ---------- mundo ----------
   ctx.save();
   ctx.translate(-camX, -camY);
 
   // chão
-  ctx.fillStyle = groundPattern;
+  ctx.fillStyle = map.groundPattern === 'village' ? villageGroundPattern : groundPattern;
   ctx.fillRect(camX - 60, camY - 60, VW + 120, VH + 120);
 
   // água
   drawWater(ctx);
 
-  // névoa rasteira animada
+  // névoa rasteira
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 14; i++) {
@@ -2612,24 +2793,40 @@ function render() {
   }
   ctx.restore();
 
-  // ---------- entidades ordenadas por Y ----------
+  // partículas de ambiente (folhas na floresta)
+  if (map.sky && Math.random() < 0.3) {
+    P({
+      type: 'leaf',
+      x: camX + rand(0, VW),
+      y: camY + rand(-50, 100),
+      vx: rand(-30, 30), vy: rand(20, 60),
+      life: rand(4, 8), size: rand(3, 6),
+      color: pick(['rgba(120, 160, 90, 0.7)', 'rgba(90, 130, 70, 0.7)', 'rgba(150, 180, 100, 0.6)']),
+      drag: 0.99, grav: 15, rot: rand(0, TAU), rotV: rand(-2, 2),
+      add: false
+    });
+  }
+
+  // entidades ordenadas por Y
   const drawables = [];
   if (player) drawables.push(player);
-  if (boss) drawables.push(boss);
+  if (boss && !boss.dead) drawables.push(boss);
   for (const e of G.enemies) if (!e.dead) drawables.push(e);
   for (const n of G.npcs) drawables.push(n);
   drawables.sort((a, b) => a.y - b.y);
 
+  // portais embaixo
+  for (const p of G.portals) p.draw(ctx);
+
   for (const d of drawables) d.draw(ctx);
 
-  // partículas (espaço de mundo)
   drawParticles(ctx);
 
   // indicador de interação
-  if (!Dialogue.active && !G.paused) {
+  if (!Dialogue.active && !G.paused && !G.transitioning && player && !player.dead) {
     for (const n of G.npcs) {
       const d = Math.hypot(n.x - player.x, n.y - player.y);
-      if (d < 110) {
+      if (d < 130) {
         ctx.save();
         ctx.globalAlpha = 0.85;
         ctx.fillStyle = 'rgba(12, 16, 28, 0.9)';
@@ -2649,13 +2846,11 @@ function render() {
 
   ctx.restore();
 
-  // ---------- primeiro plano (parallax mais rápido) ----------
-  drawLayer(foreLayer, 1.35, 0.08, 1);
+  if (map.sky) drawLayer(foreLayer, 1.35, 0.08, 1);
 
-  // ---------- iluminação ----------
   drawLighting();
 
-  // ---------- tinta vermelha da fase 2 ----------
+  // tinta vermelha fase 2
   if (boss && boss.phase === 2 && !boss.dead) {
     ctx.save();
     ctx.globalCompositeOperation = 'overlay';
@@ -2664,7 +2859,7 @@ function render() {
     ctx.restore();
   }
 
-  // ---------- mensagem de vitória ----------
+  // vitória
   if (G.over) {
     ctx.save();
     ctx.fillStyle = 'rgba(4, 6, 14, 0.55)';
@@ -2684,14 +2879,14 @@ function render() {
 }
 
 /* =========================================================================
-   21. LOOP PRINCIPAL
+   23. LOOP PRINCIPAL
    ========================================================================= */
 let lastTime = performance.now();
 
 function loop(now) {
   let dt = (now - lastTime) / 1000;
   lastTime = now;
-  dt = Math.min(dt, 1 / 20); // clamp para evitar saltos
+  dt = Math.min(dt, 1 / 20);
 
   update(dt);
   render();
@@ -2703,25 +2898,32 @@ function update(dt) {
   G.time += dt;
 
   Audio.update();
+  // CORREÇÃO: o diálogo sempre atualiza, mesmo com G.paused
   Dialogue.update(dt);
   camera.updateShake(dt);
 
-  if (!G.running || G.paused || Dialogue.active || G.over) {
-    return;
-  }
+  if (!G.running || G.transitioning) return;
+
+  // Com pausa (diálogo/inventário) só atualiza o loop básico
+  if (G.paused) return;
+
+  if (G.over) return;
 
   updateParticles(dt);
 
-  player.update(dt);
-  boss.update(dt, player);
+  if (player) player.update(dt);
+  if (boss && MapSystem.current === 1) boss.update(dt, player);
 
   for (const e of G.enemies) e.update(dt, player);
   for (const n of G.npcs) n.update(dt);
 
+  MapSystem.update(dt);
+
   camera.follow(player, dt);
   updateHUD();
+  drawMinimap();
 
-  // remove inimigos mortos após um tempo
+  // remove inimigos mortos
   for (let i = G.enemies.length - 1; i >= 0; i--) {
     if (G.enemies[i].dead && G.enemies[i].deadT !== undefined) {
       G.enemies[i].deadT += dt;
@@ -2733,28 +2935,29 @@ function update(dt) {
 }
 
 /* =========================================================================
-   22. BOOTSTRAP
+   24. BOOTSTRAP
    ========================================================================= */
 function boot() {
   buildLayers();
   Dialogue.init();
   initHUD();
-  setupWorld();
 
-  // mensagem inicial no console (para curiosos)
-  console.log('%c AETHEL ', 'background:#12203a;color:#9fe8ff;font-size:16px;padding:4px 8px;border-radius:4px');
-  console.log('Lâmina Estilhaçada equipada. Boa sorte no vale.');
+  // Inicia no mapa 0 (vila)
+  MapSystem.load(0);
 
-  // botão de início
+  // Remove o flash inicial de transição para o primeiro mapa
+  document.getElementById('transition').classList.add('hidden');
+  G.transitioning = false;
+
   document.getElementById('startbtn').addEventListener('click', () => {
     document.getElementById('startscreen').classList.add('hidden');
     G.running = true;
+    G.paused = false;
     Audio.unlock();
     Audio.sfx('nova');
-    burstIce(player.x, player.y, 40, 0, 320);
+    if (player) burstIce(player.x, player.y, 40, 0, 320);
   });
 
-  // clique na poção do inventário
   document.querySelector('[data-item="potion"]').addEventListener('click', () => {
     usePotion();
   });
