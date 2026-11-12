@@ -1,1 +1,331 @@
 
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mini Estúdio – Sintetizador e Sequenciador</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#14161b; --panel:#1b1e25; --edge:#2a2f39; --ink:#e8eaf0; --mute:#9aa3b2;
+  --amber:#ffb347; --teal:#6ee7d3; --blue:#8ab4ff; --key-w:#e9ecf1; --key-b:#0d0f13;
+  box-sizing:border-box; color-scheme:dark;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.app{max-width:1100px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:16px}
+h1{font-size:20px;font-weight:600;margin:0}
+h2{font-size:15px;font-weight:600;margin:0 0 14px;color:var(--ink)}
+header p{margin:4px 0 0;color:var(--mute)}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:16px}
+.top{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.top{grid-template-columns:1fr}}
+.ctl{display:grid;grid-template-columns:110px 1fr 56px;align-items:center;gap:10px;margin-bottom:12px}
+.ctl label{color:var(--mute)}
+.ctl output{text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--amber);height:28px}
+/* Botões */
+button,select,input[type=number]{font:inherit;color:var(--ink);background:#252a34;border:1px solid var(--edge);border-radius:6px;padding:8px 12px;cursor:pointer;transition:background .08s,transform .08s,border-color .08s}
+button:hover{background:#2e3440}
+button:active{transform:scale(.96)}
+button:focus-visible,input:focus-visible,.key:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.waves{display:flex;gap:8px;flex-wrap:wrap}
+.waves button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:#1a1100;font-weight:600}
+/* Transporte */
+.transport{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+#play{background:var(--amber);border-color:var(--amber);color:#1a1100;font-weight:600;min-width:84px}
+#play:hover{background:#ffc26b}
+#play.on{background:#3a2a10;color:var(--amber)}
+.bpm{display:flex;align-items:center;gap:8px;color:var(--mute)}
+.bpm input{width:76px}
+/* Grade */
+.grid-wrap{overflow-x:auto;padding-bottom:4px}
+.row{display:grid;grid-template-columns:64px repeat(16,minmax(30px,1fr));gap:4px;align-items:center;min-width:620px;margin-bottom:6px}
+.row .name{color:var(--mute)}
+.step{height:42px;padding:0;border-radius:5px;background:#252a34}
+.step:nth-child(5n+2),.step:nth-child(5n+3),.step:nth-child(5n+4),.step:nth-child(5n+5){}
+.step.grp{background:#2d333f}
+.step.on{background:var(--c);border-color:var(--c);box-shadow:0 0 10px color-mix(in srgb,var(--c) 45%,transparent)}
+.step.now{outline:2px solid #fff;outline-offset:-2px}
+.row[data-t=kick]{--c:var(--amber)} .row[data-t=snare]{--c:var(--teal)} .row[data-t=hat]{--c:var(--blue)}
+/* Piano */
+.piano{display:flex;height:190px;user-select:none;touch-action:none;overflow-x:auto}
+.key{position:relative;flex:1 0 38px;background:var(--key-w);border:1px solid #9ca3af;border-radius:0 0 6px 6px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;color:#4b5563;font-size:13px;cursor:pointer}
+.key.down{background:var(--amber)}
+.black{position:absolute;top:0;right:-14px;width:26px;height:118px;background:var(--key-b);border:1px solid #000;border-radius:0 0 5px 5px;z-index:2;color:#9aa3b2;font-size:12px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px}
+.black.down{background:var(--amber);color:#1a1100}
+.hint{color:var(--mute);margin:10px 0 0;font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Mini Estúdio</h1>
+    <p>Toque o piano, escolha o timbre e monte uma batida de 16 passos.</p>
+  </header>
+
+  <div class="top">
+    <section class="panel" aria-labelledby="h-synth">
+      <h2 id="h-synth">Sintetizador</h2>
+      <div class="waves" id="waves" role="group" aria-label="Tipo de onda">
+        <button data-w="sine" aria-pressed="false">Sine</button>
+        <button data-w="square" aria-pressed="false">Square</button>
+        <button data-w="sawtooth" aria-pressed="true">Sawtooth</button>
+        <button data-w="triangle" aria-pressed="false">Triangle</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-fx">
+      <h2 id="h-fx">Efeitos</h2>
+      <div class="ctl"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="70"><output id="volO">70%</output></div>
+      <div class="ctl"><label for="cut">Filtro (low-pass)</label><input id="cut" type="range" min="0" max="100" value="100"><output id="cutO">20 kHz</output></div>
+      <div class="ctl"><label for="dly">Delay</label><input id="dly" type="range" min="0" max="100" value="0"><output id="dlyO">0%</output></div>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="h-seq">
+    <h2 id="h-seq">Sequenciador</h2>
+    <div class="transport">
+      <button id="play">Play</button>
+      <button id="clear">Limpar</button>
+      <label class="bpm">BPM <input id="bpm" type="number" min="40" max="220" value="110"></label>
+    </div>
+    <div class="grid-wrap"><div id="grid"></div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-keys">
+    <h2 id="h-keys">Teclado</h2>
+    <div class="piano" id="piano"></div>
+    <p class="hint">No computador: A W S E D F T G Y H U J K O L P ; tocam de Dó a Mi. O restante do piano responde ao mouse e ao toque.</p>
+  </section>
+</div>
+
+<script>
+/* ============ 1. GRAFO DE ÁUDIO ============
+   Fluxo do som:
+   Osciladores (teclas) ─┐
+   Bateria (kick/snare/hat) ─┴─► [filter] ─┬────────────────► [master] ─► caixas de som
+                                            └► [delay] ─► [wet] ─► [master]
+                                                  ▲  │
+                                                  └─[feedback]  (repetições do eco)
+   O AudioContext só pode começar depois de um gesto do usuário, então é criado no primeiro clique/tecla. */
+let ctx, master, filter, delay, wet, noiseBuf;
+
+function initAudio(){
+  if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  master = ctx.createGain();                       // GainNode = volume geral
+  master.gain.value = vol.value / 100;
+
+  filter = ctx.createBiquadFilter();               // BiquadFilterNode = corta agudos
+  filter.type = 'lowpass';
+  filter.frequency.value = cutHz();
+
+  delay = ctx.createDelay(1);                      // DelayNode = eco
+  delay.delayTime.value = 0.3;
+  const feedback = ctx.createGain();               // realimenta o delay para gerar repetições
+  feedback.gain.value = 0.4;
+  wet = ctx.createGain();                          // quantidade de eco misturada ao som
+  wet.gain.value = dly.value / 100;
+
+  filter.connect(master);                          // caminho direto
+  filter.connect(delay);                           // envio para o eco
+  delay.connect(feedback); feedback.connect(delay);
+  delay.connect(wet); wet.connect(master);
+  master.connect(ctx.destination);                 // saída final
+
+  // 1 segundo de ruído branco, reaproveitado por snare e hi-hat
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for(let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+
+/* ============ 2. CONTROLES DE SOM ============ */
+const $ = id => document.getElementById(id);
+const vol = $('vol'), cut = $('cut'), dly = $('dly');
+let wave = 'sawtooth';
+
+const cutHz = () => 200 * Math.pow(100, cut.value / 100);   // 200 Hz … 20 kHz (escala logarítmica)
+
+$('waves').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  wave = b.dataset.w;
+  document.querySelectorAll('#waves button').forEach(x => x.setAttribute('aria-pressed', x === b));
+});
+vol.oninput = () => { $('volO').textContent = vol.value + '%'; if(ctx) master.gain.setTargetAtTime(vol.value / 100, ctx.currentTime, .01); };
+cut.oninput = () => {
+  const f = cutHz();
+  $('cutO').textContent = f >= 1000 ? (f / 1000).toFixed(1) + ' kHz' : Math.round(f) + ' Hz';
+  if(ctx) filter.frequency.setTargetAtTime(f, ctx.currentTime, .01);
+};
+dly.oninput = () => { $('dlyO').textContent = dly.value + '%'; if(ctx) wet.gain.setTargetAtTime(dly.value / 100, ctx.currentTime, .01); };
+
+/* ============ 3. TECLADO VIRTUAL ============ */
+const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const KEYMAP = 'awsedftgyhujkolp;';               // a=Dó, w=Dó#, s=Ré … conforme o pedido
+const TOTAL = 24, BASE = 60;                      // 2 oitavas a partir do Dó central (MIDI 60)
+const active = {};                                // notas soando: id -> função que encerra a nota
+const keyEls = {};
+
+// Cada tecla = 1 OscillatorNode → GainNode (envelope) → filter
+function noteOn(id, midi){
+  if(active[id]) return;
+  initAudio();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = wave;
+  osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);   // fórmula MIDI → Hz
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.3, t + 0.01);             // ataque curto, evita "clique"
+  env.gain.setTargetAtTime(0.2, t + 0.01, 0.2);                // leve queda para o sustain
+  osc.connect(env); env.connect(filter);
+  osc.start(t);
+  active[id] = () => {                                         // release suave ao soltar a tecla
+    const n = ctx.currentTime;
+    env.gain.cancelScheduledValues(n);
+    env.gain.setValueAtTime(env.gain.value, n);
+    env.gain.setTargetAtTime(0, n, 0.06);
+    osc.stop(n + 0.4);
+  };
+  keyEls[midi].classList.add('down');
+}
+function noteOff(id, midi){
+  if(!active[id]) return;
+  active[id](); delete active[id];
+  keyEls[midi].classList.remove('down');
+}
+
+// Monta o piano: teclas pretas ficam dentro da tecla branca anterior
+const piano = $('piano');
+for(let i = 0; i < TOTAL; i++){
+  const name = NAMES[i % 12];
+  if(name.includes('#')) continue;
+  const white = mk(i, name);
+  const next = i + 1;
+  if(next < TOTAL && NAMES[next % 12].includes('#')){
+    const bk = mk(next, NAMES[next % 12], true);
+    white.appendChild(bk);
+  }
+  piano.appendChild(white);
+}
+function mk(i, name, black){
+  const el = document.createElement('div');
+  const midi = BASE + i;
+  el.className = black ? 'black' : 'key';
+  el.setAttribute('aria-label', name + (4 + Math.floor(i / 12)));
+  if(!black) el.tabIndex = -1;
+  el.textContent = i < KEYMAP.length ? KEYMAP[i].toUpperCase() : '';
+  keyEls[midi] = el;
+  const id = 'm' + midi;
+  el.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); noteOn(id, midi); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => el.addEventListener(ev, e => { e.stopPropagation(); noteOff(id, midi); }));
+  return el;
+}
+// Teclado do computador
+addEventListener('keydown', e => {
+  if(e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.target.tagName === 'INPUT') return;
+  const i = KEYMAP.indexOf(e.key.toLowerCase());
+  if(i >= 0) noteOn('k' + i, BASE + i);
+});
+addEventListener('keyup', e => {
+  const i = KEYMAP.indexOf(e.key.toLowerCase());
+  if(i >= 0) noteOff('k' + i, BASE + i);
+});
+
+/* ============ 4. BATERIA SINTETIZADA ============ */
+const drums = {
+  kick(t){            // seno que despenca de 150 Hz para 40 Hz = "bumbo"
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    g.gain.setValueAtTime(1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    o.connect(g); g.connect(filter); o.start(t); o.stop(t + 0.4);
+  },
+  snare(t){           // ruído filtrado + um "corpo" triangular
+    noise(t, 0.2, 1000, 0.6);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(190, t);
+    g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g); g.connect(filter); o.start(t); o.stop(t + 0.15);
+  },
+  hat(t){ noise(t, 0.05, 7000, 0.35); }   // ruído agudo e curtíssimo
+};
+function noise(t, dur, hp, level){
+  const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = hp;
+  g.gain.setValueAtTime(level, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(filter); s.start(t); s.stop(t + dur + 0.02);
+}
+
+/* ============ 5. STEP SEQUENCER ============ */
+const TRACKS = [['kick','Kick'], ['snare','Snare'], ['hat','Hi-hat']];
+const pattern = {
+  kick:  [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+  snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+  hat:   [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0]
+};
+const grid = $('grid');
+TRACKS.forEach(([key, label]) => {
+  const row = document.createElement('div');
+  row.className = 'row'; row.dataset.t = key;
+  row.innerHTML = '<span class="name">' + label + '</span>';
+  for(let s = 0; s < 16; s++){
+    const b = document.createElement('button');
+    b.className = 'step' + (s % 8 < 4 ? ' grp' : '') + (pattern[key][s] ? ' on' : '');
+    b.setAttribute('aria-label', label + ' passo ' + (s + 1));
+    b.onclick = () => { pattern[key][s] ^= 1; b.classList.toggle('on'); };
+    row.appendChild(b);
+  }
+  grid.appendChild(row);
+});
+$('clear').onclick = () => {
+  TRACKS.forEach(([k]) => pattern[k].fill(0));
+  document.querySelectorAll('.step').forEach(b => b.classList.remove('on'));
+};
+
+// Agendador "lookahead": um timer JS frouxo (25 ms) agenda os sons ~100 ms adiante
+// usando o relógio de precisão do áudio (ctx.currentTime), o que mantém o ritmo estável.
+let playing = false, step = 0, nextTime = 0, timer, queue = [];
+const bpm = $('bpm');
+
+function schedule(){
+  while(nextTime < ctx.currentTime + 0.1){
+    TRACKS.forEach(([k]) => { if(pattern[k][step]) drums[k](nextTime); });
+    queue.push({ s: step, t: nextTime });
+    nextTime += 60 / (+bpm.value || 110) / 4;            // 1 passo = semicolcheia
+    step = (step + 1) % 16;
+  }
+}
+function paint(){                                         // acende a coluna que está tocando agora
+  if(!playing) return;
+  while(queue.length && queue[0].t <= ctx.currentTime){
+    const { s } = queue.shift();
+    document.querySelectorAll('.now').forEach(x => x.classList.remove('now'));
+    document.querySelectorAll('.row').forEach(r => r.children[s + 1].classList.add('now'));
+  }
+  requestAnimationFrame(paint);
+}
+$('play').onclick = () => {
+  initAudio();
+  playing = !playing;
+  $('play').textContent = playing ? 'Stop' : 'Play';
+  $('play').classList.toggle('on', playing);
+  if(playing){
+    step = 0; queue = []; nextTime = ctx.currentTime + 0.05;
+    timer = setInterval(schedule, 25);
+    requestAnimationFrame(paint);
+  } else {
+    clearInterval(timer);
+    document.querySelectorAll('.now').forEach(x => x.classList.remove('now'));
+  }
+};
+</script>
+</body>
+</html>
