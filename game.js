@@ -1,8 +1,6 @@
 /* =========================================================================
-   AETHEL v3.1 — Versão completa corrigida
-   - Transição sem setTimeout (não trava)
-   - Colisão em construções
-   - New Game+ preservado
+   AETHEL v3.2 — Versão definitiva
+   Transição simples, colisão garantida, failsafe total
    ========================================================================= */
 (function () {
 'use strict';
@@ -34,11 +32,96 @@ const G = {
   quests: {}, boulderBroken: false, newGamePlus: 0, totalGoldEarned: 0
 };
 
-/* ==================== ITENS & INVENTÁRIO ==================== */
+/* ==================== MAPAS (declarados ANTES de Player) ==================== */
+const MAPS = [
+  {
+    name: 'VILA DE AETHEL', sub: 'Refúgio dos sobreviventes',
+    worldW: 2200, worldH: 1500, spawn: { x: 500, y: 900 },
+    groundPattern: 'village', sky: false, ambient: 'dark',
+    enemies: [], npcs: ['galdur', 'elara', 'brock'],
+    buildings: [
+      { type: 'blacksmith', x: 380, y: 500, w: 220, h: 180 },
+      { type: 'shop',       x: 1450, y: 500, w: 240, h: 190 },
+      { type: 'house1',     x: 780, y: 400, w: 180, h: 150 },
+      { type: 'house2',     x: 1050, y: 420, w: 180, h: 150 },
+      { type: 'well',       x: 900, y: 800, w: 100, h: 100 }
+    ],
+    portals: [{ x: 1950, y: 750, target: 1, label: '→ FLORESTA SOMBRIA' }]
+  },
+  {
+    name: 'FLORESTA SOMBRIA', sub: 'Onde as raízes respiram',
+    worldW: 3400, worldH: 2000, spawn: { x: 300, y: 900 },
+    groundPattern: 'forest', sky: true, ambient: 'dark',
+    enemies: ['stalker', 'stalker', 'golem', 'stalker', 'golem', 'stalker'],
+    npcs: [],
+    portals: [
+      { x: 200, y: 900, target: 0, label: '← VILA DE AETHEL' },
+      { x: 3050, y: 950, target: 2, label: '→ CAVERNA DE CRISTAL', blocked: true }
+    ],
+    boulder: true
+  },
+  {
+    name: 'CAVERNA DE CRISTAL', sub: 'A escuridão que pulsa',
+    worldW: 3000, worldH: 1800, spawn: { x: 300, y: 900 },
+    groundPattern: 'cave', sky: false, ambient: 'cave',
+    enemies: ['bat', 'bat', 'crab', 'troll', 'bat', 'crab', 'troll'],
+    npcs: [],
+    portals: [
+      { x: 200, y: 900, target: 1, label: '← FLORESTA' },
+      { x: 2750, y: 900, target: 3, label: '→ TRONO DE MORGATH' }
+    ]
+  },
+  {
+    name: 'TRONO DE MORGATH', sub: 'Onde o vale apodrece',
+    worldW: 1800, worldH: 1200, spawn: { x: 300, y: 600 },
+    groundPattern: 'forest', sky: true, ambient: 'dark',
+    enemies: [], npcs: [],
+    portals: [{ x: 150, y: 600, target: 2, label: '← CAVERNA' }],
+    boss: { x: 1200, y: 600 }
+  }
+];
+
+const BOULDER = { x: 3050, y: 950 };
+
+/* ==================== ESTADO GLOBAL DE ENTIDADES ==================== */
+let boss = null, player = null, galdur = null, elara = null, brock = null;
+
+/* ==================== TRANSITION SIMPLES ==================== */
+let _transitionState = null;
+
+function showTransition(name, sub, done) {
+  G.transitioning = true;
+  G.paused = true;
+  const el = document.getElementById('transition');
+  document.getElementById('transname').textContent = name;
+  document.getElementById('transsub').textContent = sub;
+  el.classList.remove('hidden');
+  _transitionState = { timer: 0, hideAt: 1.0, endAt: 1.6, callback: done || null };
+  console.log('[TRANS] iniciada:', name);
+}
+
+function updateTransition(dt) {
+  if (!_transitionState) return;
+  _transitionState.timer += dt;
+  if (_transitionState.timer >= _transitionState.hideAt) {
+    document.getElementById('transition').classList.add('hidden');
+  }
+  if (_transitionState.timer >= _transitionState.endAt) {
+    const cb = _transitionState.callback;
+    _transitionState = null;
+    G.transitioning = false;
+    G.paused = false;
+    document.getElementById('transition').classList.add('hidden');
+    console.log('[TRANS] finalizada');
+    if (cb) cb();
+  }
+}
+
+/* ==================== ITENS ==================== */
 const ITEMS = {
   potion:   { name: 'Cálice de Sangue', icon: 'potion', buy: 15, sell: 5, desc: 'Cura 22 HP e ativa fúria' },
   iron_ore: { name: 'Minério de Ferro', icon: 'ore', sell: 8, desc: 'Material de forja' },
-  dynamite: { name: 'Dinamite', icon: 'bomb', sell: 0, desc: 'Explode rochas obstruindo passagens' }
+  dynamite: { name: 'Dinamite', icon: 'bomb', sell: 0, desc: 'Explode rochas' }
 };
 
 const Inventory = {
@@ -561,17 +644,15 @@ class Player {
   }
 
   applyUpgrades() {
-    const baseHp = 100;
-    this.maxHp = baseHp + (this.upgrades.ironArmor ? 30 : 0);
+    this.maxHp = 100 + (this.upgrades.ironArmor ? 30 : 0);
     this.hp = Math.min(this.hp, this.maxHp);
     this.baseSpeed = 255 * (this.upgrades.swiftBoots ? 1.2 : 1);
   }
 
   damageBonus() { return this.upgrades.steelSword ? 15 : 0; }
 
-  /* --- COLISÃO COM CONSTRUÇÕES --- */
   checkBuildingCollision(px, py) {
-    const map = MAPS[MapSystem.current];
+    const map = MAPS[G.currentMap];
     if (!map || !map.buildings) return false;
     const pr = this.r;
     for (const b of map.buildings) {
@@ -581,10 +662,8 @@ class Player {
       }
       const bx = b.x - b.w / 2;
       const by = b.y - b.h;
-      const bw = b.w;
-      const bh = b.h;
-      const cx = clamp(px, bx, bx + bw);
-      const cy = clamp(py, by, by + bh);
+      const cx = clamp(px, bx, bx + b.w);
+      const cy = clamp(py, by, by + b.h);
       if (Math.hypot(px - cx, py - cy) < pr) return true;
     }
     return false;
@@ -761,7 +840,7 @@ class Player {
   respawn() {
     this.dead = false;
     this.hp = this.maxHp; this.mana = this.maxMana;
-    const map = MAPS[MapSystem.current];
+    const map = MAPS[G.currentMap];
     this.x = map.spawn.x; this.y = map.spawn.y;
     this.invuln = 2;
     burstSparks(this.x, this.y, 30, '#9fe8ff', 300);
@@ -1303,7 +1382,7 @@ class CrystalCrab {
   }
   takeDamage(dmg, ang) {
     if (this.dead) return;
-    this.hp -= dmg - 3;
+    this.hp -= Math.max(1, dmg - 3); // defesa
     this.hitFlash = 1;
     burstSparks(this.x, this.y, 8, '#9fe8ff', 260);
     if (this.hp <= 0) this.die();
@@ -1322,10 +1401,8 @@ class CrystalCrab {
     for (let s = -1; s <= 1; s += 2) {
       for (let i = 0; i < 3; i++) {
         const lx = i * 8 - 8;
-        g.beginPath();
-        g.moveTo(lx, 12);
-        g.lineTo(lx + s * (14 + legW), 24);
-        g.stroke();
+        g.beginPath(); g.moveTo(lx, 12);
+        g.lineTo(lx + s * (14 + legW), 24); g.stroke();
       }
     }
     const shellGrad = g.createRadialGradient(-4, -6, 0, 0, 0, 30);
@@ -1883,11 +1960,10 @@ function tryInteract() {
     if (d < bestD) { bestD = d; best = n; }
   }
   if (best) { best.interact(); return; }
-  if (MapSystem.current === 1 && !G.boulderBroken) {
+  if (G.currentMap === 1 && !G.boulderBroken) {
     const bd = Math.hypot(player.x - BOULDER.x, player.y - BOULDER.y);
     if (bd < 100 && Inventory.count('dynamite') > 0) {
       blowBoulder();
-      return;
     }
   }
 }
@@ -1959,62 +2035,266 @@ class Portal {
   }
 }
 
-const BOULDER = { x: 3050, y: 950 };
+/* ==================== MAP SYSTEM ==================== */
+const MapSystem = {
+  current: 0, transitionCooldown: 0,
 
-/* ==================== MAPAS ==================== */
-const MAPS = [
-  {
-    name: 'VILA DE AETHEL', sub: 'Refúgio dos sobreviventes',
-    worldW: 2200, worldH: 1500, spawn: { x: 500, y: 900 },
-    groundPattern: 'village', sky: false, ambient: 'dark',
-    enemies: [], npcs: ['galdur', 'elara', 'brock'],
-    buildings: [
-      { type: 'blacksmith', x: 380, y: 500, w: 220, h: 180 },
-      { type: 'shop',       x: 1450, y: 500, w: 240, h: 190 },
-      { type: 'house1',     x: 780, y: 400, w: 180, h: 150 },
-      { type: 'house2',     x: 1050, y: 420, w: 180, h: 150 },
-      { type: 'well',       x: 900, y: 800, w: 100, h: 100 }
-    ],
-    portals: [{ x: 1950, y: 750, target: 1, label: '→ FLORESTA SOMBRIA' }]
+  load(index, silent) {
+    console.log('[MAP] load:', index, 'silent:', !!silent);
+    this.current = index;
+    G.currentMap = index;
+    G.transitioning = true;
+    G.paused = true;
+
+    const map = MAPS[index];
+    camera.worldW = map.worldW;
+    camera.worldH = map.worldH;
+
+    G.enemies = []; G.npcs = []; G.portals = [];
+    boss = null; particles.length = 0;
+    galdur = elara = brock = null;
+
+    if (!player) player = new Player(map.spawn.x, map.spawn.y);
+    else {
+      player.x = map.spawn.x; player.y = map.spawn.y;
+      player.invuln = 1.5;
+    }
+    player.applyUpgrades();
+
+    if (index === 0) {
+      galdur = new Galdur(1500, 780);
+      elara = new Elara(900, 1100);
+      brock = new Brock(430, 780);
+      G.npcs = [galdur, elara, brock];
+    }
+
+    for (const type of map.enemies) {
+      let e = null;
+      const ex = rand(400, map.worldW - 400);
+      const ey = rand(300, map.worldH - 300);
+      if (type === 'stalker') e = new MossStalker(ex, ey);
+      else if (type === 'golem') e = new GlassGolem(ex, ey);
+      else if (type === 'bat') e = new CaveBat(ex, ey);
+      else if (type === 'crab') e = new CrystalCrab(ex, ey);
+      else if (type === 'troll') e = new CaveTroll(ex, ey);
+      if (e) G.enemies.push(e);
+    }
+
+    if (map.boss) boss = new Morgath(map.boss.x, map.boss.y);
+
+    this.refreshPortals();
+
+    document.getElementById('maptitle').textContent = map.name;
+    document.getElementById('mapsub').textContent = map.sub;
+
+    camera.x = clamp(player.x - VW / 2, 0, Math.max(0, map.worldW - VW));
+    camera.y = clamp(player.y - VH / 2, 0, Math.max(0, map.worldH - VH));
+
+    if (silent) {
+      G.transitioning = false;
+      G.paused = false;
+      document.getElementById('transition').classList.add('hidden');
+    } else {
+      showTransition(map.name, map.sub, () => {
+        G.transitioning = false;
+        G.paused = false;
+      });
+      Audio.sfx('portal');
+    }
+
+    if (index === 3 && !Quests.isComplete('boss_quest')) {
+      Quests.add('boss_quest', 'Derrote Morgath no trono', 0, 1);
+    }
   },
-  {
-    name: 'FLORESTA SOMBRIA', sub: 'Onde as raízes respiram',
-    worldW: 3400, worldH: 2000, spawn: { x: 300, y: 900 },
-    groundPattern: 'forest', sky: true, ambient: 'dark',
-    enemies: ['stalker', 'stalker', 'golem', 'stalker', 'golem', 'stalker'],
-    npcs: [],
-    portals: [
-      { x: 200, y: 900, target: 0, label: '← VILA DE AETHEL' },
-      { x: 3050, y: 950, target: 2, label: '→ CAVERNA DE CRISTAL', blocked: true }
-    ],
-    boulder: true
+
+  refreshPortals() {
+    G.portals = [];
+    const map = MAPS[this.current];
+    for (const p of map.portals) {
+      let blocked = false;
+      if (p.targetMap === 2 && this.current === 1) blocked = !G.boulderBroken;
+      G.portals.push(new Portal(p.x, p.y, p.targetMap, p.label, blocked));
+    }
   },
-  {
-    name: 'CAVERNA DE CRISTAL', sub: 'A escuridão que pulsa',
-    worldW: 3000, worldH: 1800, spawn: { x: 300, y: 900 },
-    groundPattern: 'cave', sky: false, ambient: 'cave',
-    enemies: ['bat', 'bat', 'crab', 'troll', 'bat', 'crab', 'troll'],
-    npcs: [],
-    portals: [
-      { x: 200, y: 900, target: 1, label: '← FLORESTA' },
-      { x: 2750, y: 900, target: 3, label: '→ TRONO DE MORGATH' }
-    ]
-  },
-  {
-    name: 'TRONO DE MORGATH', sub: 'Onde o vale apodrece',
-    worldW: 1800, worldH: 1200, spawn: { x: 300, y: 600 },
-    groundPattern: 'forest', sky: true, ambient: 'dark',
-    enemies: [], npcs: [],
-    portals: [{ x: 150, y: 600, target: 2, label: '← CAVERNA' }],
-    boss: { x: 1200, y: 600 }
+
+  update(dt) {
+    if (this.transitionCooldown > 0) this.transitionCooldown -= dt;
+    for (const p of G.portals) {
+      p.update(dt);
+      if (!p.blocked && this.transitionCooldown <= 0 &&
+          Math.hypot(player.x - p.x, player.y - p.y) < p.r) {
+        console.log('[MAP] entrou no portal para mapa', p.targetMap);
+        this.transitionCooldown = 2;
+        this.load(p.targetMap);
+        return;
+      }
+    }
   }
-];
+};
 
-let boss = null, player = null, galdur = null, elara = null, brock = null;
+/* ==================== HUD ==================== */
+const hudCache = { hp: -1, mana: -1, rage: -1, boss: -1 };
+let hudEls = null, minimapCanvas, minimapCtx;
+
+function initHUD() {
+  hudEls = {
+    hpfill: document.getElementById('hpfill'),
+    hptext: document.getElementById('hptext'),
+    manafill: document.getElementById('manafill'),
+    manatext: document.getElementById('manatext'),
+    ragefill: document.getElementById('ragefill'),
+    bossfill: document.getElementById('bossfill'),
+    bossbar: document.getElementById('bossbar'),
+    rage: document.getElementById('rageoverlay')
+  };
+  minimapCanvas = document.getElementById('minimap');
+  minimapCtx = minimapCanvas.getContext('2d');
+}
+
+function updateHUD() {
+  if (!hudEls || !player) return;
+  const hp = Math.round(player.hp);
+  if (hp !== hudCache.hp) {
+    hudCache.hp = hp;
+    hudEls.hpfill.style.width = (hp / player.maxHp * 100) + '%';
+    hudEls.hptext.textContent = `${hp} / ${player.maxHp}`;
+  }
+  const mp = Math.round(player.mana);
+  if (mp !== hudCache.mana) {
+    hudCache.mana = mp;
+    hudEls.manafill.style.width = (mp / player.maxMana * 100) + '%';
+    hudEls.manatext.textContent = `${mp} / ${player.maxMana}`;
+  }
+  const ragePct = Math.round(player.rage / player.maxRage * 100);
+  if (ragePct !== hudCache.rage) {
+    hudCache.rage = ragePct;
+    hudEls.ragefill.style.width = ragePct + '%';
+  }
+  const engaged = boss && !boss.dead &&
+    Math.hypot(boss.x - player.x, boss.y - player.y) < 1000;
+  G.bossEngaged = !!engaged;
+  hudEls.bossbar.classList.toggle('hidden', !engaged);
+  if (engaged) {
+    const pct = Math.round(boss.hp / boss.maxHp * 100);
+    if (pct !== hudCache.boss) {
+      hudCache.boss = pct;
+      hudEls.bossfill.style.width = pct + '%';
+    }
+  }
+  hudEls.rage.classList.toggle('on', player.rage > 0);
+}
+
+function drawMinimap() {
+  if (!minimapCtx || !player) return;
+  const mw = minimapCanvas.width, mh = minimapCanvas.height;
+  const map = MAPS[G.currentMap];
+  const sx = mw / map.worldW, sy = mh / map.worldH;
+  minimapCtx.clearRect(0, 0, mw, mh);
+  minimapCtx.fillStyle = 'rgba(20,28,40,0.85)'; minimapCtx.fillRect(0, 0, mw, mh);
+  const groundColor = G.currentMap === 0 ? 'rgba(70,55,40,0.7)' :
+                      G.currentMap === 2 ? 'rgba(30,20,50,0.7)' : 'rgba(24,40,30,0.7)';
+  minimapCtx.fillStyle = groundColor; minimapCtx.fillRect(2, 2, mw - 4, mh - 4);
+  if (map.buildings) {
+    for (const b of map.buildings) {
+      minimapCtx.fillStyle = 'rgba(140,100,60,0.9)';
+      minimapCtx.fillRect(b.x * sx - 3, b.y * sy - 3, 6, 6);
+    }
+  }
+  for (const p of G.portals) {
+    minimapCtx.fillStyle = p.blocked ? 'rgba(120,80,50,0.9)' : 'rgba(120,220,255,0.9)';
+    minimapCtx.beginPath(); minimapCtx.arc(p.x * sx, p.y * sy, 3, 0, TAU); minimapCtx.fill();
+  }
+  for (const n of G.npcs) {
+    minimapCtx.fillStyle = 'rgba(255,210,120,0.95)';
+    minimapCtx.beginPath(); minimapCtx.arc(n.x * sx, n.y * sy, 2.5, 0, TAU); minimapCtx.fill();
+  }
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    minimapCtx.fillStyle = 'rgba(255,90,60,0.9)';
+    minimapCtx.beginPath(); minimapCtx.arc(e.x * sx, e.y * sy, 2, 0, TAU); minimapCtx.fill();
+  }
+  if (boss && !boss.dead) {
+    minimapCtx.fillStyle = 'rgba(255,50,30,1)';
+    minimapCtx.beginPath(); minimapCtx.arc(boss.x * sx, boss.y * sy, 4, 0, TAU); minimapCtx.fill();
+  }
+  minimapCtx.save();
+  minimapCtx.translate(player.x * sx, player.y * sy);
+  minimapCtx.rotate(player.facing);
+  minimapCtx.fillStyle = 'rgba(200,240,255,1)';
+  minimapCtx.beginPath(); minimapCtx.moveTo(4, 0); minimapCtx.lineTo(-3, -3);
+  minimapCtx.lineTo(-3, 3); minimapCtx.closePath(); minimapCtx.fill();
+  minimapCtx.restore();
+}
+
+/* ==================== ILUMINAÇÃO ==================== */
+function drawLighting() {
+  const map = MAPS[G.currentMap];
+  const p2 = boss && boss.phase === 2 && !boss.dead;
+  lctx.setTransform(1, 0, 0, 1, 0, 0);
+  lctx.globalCompositeOperation = 'source-over';
+  let ambientDark = 0.78;
+  if (map.ambient === 'cave') ambientDark = 0.84;
+  if (p2) ambientDark = 0.90;
+  lctx.fillStyle = p2 ? `rgba(26,2,6,${ambientDark})` : `rgba(4,6,18,${ambientDark})`;
+  lctx.fillRect(0, 0, VW, VH);
+  lctx.globalCompositeOperation = 'destination-out';
+  const lightAt = (wx, wy, radius, strength) => {
+    const sx = wx - camera.x + camera.shakeX;
+    const sy = wy - camera.y + camera.shakeY;
+    const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+    grad.addColorStop(0, `rgba(255,255,255,${strength})`);
+    grad.addColorStop(0.55, `rgba(255,255,255,${strength * 0.42})`);
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    lctx.fillStyle = grad;
+    lctx.beginPath(); lctx.arc(sx, sy, radius, 0, TAU); lctx.fill();
+  };
+  if (player && !player.dead) {
+    lightAt(player.x, player.y - 10, 240, 0.95);
+    lightAt(player.x, player.y - 10, 100, 0.7);
+  }
+  if (boss && !boss.dead) lightAt(boss.x, boss.y - 70, p2 ? 320 : 260, 0.85);
+  if (map.buildings) {
+    for (const b of map.buildings) {
+      if (b.type === 'blacksmith') lightAt(b.x, b.y - b.h * 0.5, 160, 0.6);
+      else if (b.type === 'shop') lightAt(b.x, b.y - b.h * 0.5, 140, 0.5);
+      else if (b.type === 'house1' || b.type === 'house2') lightAt(b.x, b.y - b.h * 0.5, 110, 0.4);
+      else if (b.type === 'well') lightAt(b.x, b.y, 80, 0.3);
+    }
+  }
+  if (galdur) for (const l of galdur.lanterns)
+    lightAt(galdur.x + Math.cos(l.a) * l.rad, galdur.y - 34 + Math.sin(l.a) * 16, 100, 0.5);
+  if (elara) lightAt(elara.x + 34, elara.y + 6, 180, 0.75);
+  if (brock) lightAt(brock.x + 30, brock.y, 130, 0.6);
+  for (const e of G.enemies) {
+    if (e instanceof GlassGolem && !e.dead) lightAt(e.x, e.y, 130, 0.5);
+    if (e instanceof CrystalCrab && !e.dead) lightAt(e.x, e.y, 100, 0.4);
+    if (e instanceof CaveBat && !e.dead) lightAt(e.x, e.y, 50, 0.3);
+  }
+  for (const p of G.portals) if (!p.blocked) lightAt(p.x, p.y, 130, 0.7);
+  lctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(lightCanvas, 0, 0);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const glowAt = (wx, wy, radius, color) => {
+    const sx = wx - camera.x + camera.shakeX;
+    const sy = wy - camera.y + camera.shakeY;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+    grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(sx, sy, radius, 0, TAU); ctx.fill();
+  };
+  if (player && G.legendaryEquipped && !player.dead) {
+    const pulse = 0.10 + Math.sin(G.time * 5) * 0.04;
+    glowAt(player.x, player.y - 10, 70, `rgba(90,210,255,${pulse})`);
+  }
+  if (boss && !boss.dead) {
+    glowAt(boss.x, boss.y - 140, 130,
+      boss.phase === 2 ? 'rgba(255,70,40,0.20)' : 'rgba(110,255,150,0.14)');
+  }
+  ctx.restore();
+}
 
 /* ==================== CONSTRUÇÕES ==================== */
 function drawBuildings(g) {
-  const map = MAPS[MapSystem.current];
+  const map = MAPS[G.currentMap];
   if (!map.buildings) return;
   for (const b of map.buildings) {
     if (b.type === 'blacksmith') drawBlacksmith(g, b);
@@ -2118,301 +2398,11 @@ function drawWell(g, b) {
   g.restore();
 }
 
-/* ==================== TRANSITION (dt-based, sem setTimeout) ==================== */
-const Transition = {
-  active: false,
-  timer: 0,
-  hideAt: 1.0,
-  endAt: 1.6,
-  maxDuration: 4.0,
-  callback: null,
-  start(name, sub, cb) {
-    if (typeof Dialogue !== 'undefined' && Dialogue.active) Dialogue.close();
-    if (typeof Shop !== 'undefined' && Shop.active) Shop.close();
-    this.active = true;
-    this.timer = 0;
-    this.callback = cb;
-    G.transitioning = true;
-    G.paused = true;
-    const el = document.getElementById('transition');
-    document.getElementById('transname').textContent = name;
-    document.getElementById('transsub').textContent = sub;
-    el.classList.remove('hidden');
-  },
-  update(dt) {
-    if (!this.active) return;
-    this.timer += dt;
-    if (this.timer >= this.hideAt) {
-      document.getElementById('transition').classList.add('hidden');
-    }
-    if (this.timer >= this.endAt || this.timer >= this.maxDuration) {
-      this.active = false;
-      document.getElementById('transition').classList.add('hidden');
-      G.transitioning = false;
-      G.paused = false;
-      const cb = this.callback;
-      this.callback = null;
-      if (cb) cb();
-    }
-  }
-};
-
-/* ==================== MAP SYSTEM ==================== */
-const MapSystem = {
-  current: 0, transitionCooldown: 0,
-  load(index, silent) {
-    this.current = index;
-    G.currentMap = index;
-    G.transitioning = true;
-    G.paused = true;
-    const map = MAPS[index];
-    camera.worldW = map.worldW;
-    camera.worldH = map.worldH;
-
-    G.enemies = []; G.npcs = []; G.portals = [];
-    boss = null; particles.length = 0;
-    galdur = elara = brock = null;
-
-    if (!player) player = new Player(map.spawn.x, map.spawn.y);
-    else {
-      player.x = map.spawn.x; player.y = map.spawn.y;
-      player.invuln = 1.5;
-    }
-    player.applyUpgrades();
-
-    if (index === 0) {
-      galdur = new Galdur(1500, 780);
-      elara = new Elara(900, 1100);
-      brock = new Brock(430, 780);
-      G.npcs = [galdur, elara, brock];
-    }
-
-    for (const type of map.enemies) {
-      let e = null;
-      const ex = rand(400, map.worldW - 400);
-      const ey = rand(300, map.worldH - 300);
-      if (type === 'stalker') e = new MossStalker(ex, ey);
-      else if (type === 'golem') e = new GlassGolem(ex, ey);
-      else if (type === 'bat') e = new CaveBat(ex, ey);
-      else if (type === 'crab') e = new CrystalCrab(ex, ey);
-      else if (type === 'troll') e = new CaveTroll(ex, ey);
-      if (e) G.enemies.push(e);
-    }
-
-    if (map.boss) boss = new Morgath(map.boss.x, map.boss.y);
-
-    this.refreshPortals();
-
-    document.getElementById('maptitle').textContent = map.name;
-    document.getElementById('mapsub').textContent = map.sub;
-
-    camera.x = clamp(player.x - VW / 2, 0, Math.max(0, map.worldW - VW));
-    camera.y = clamp(player.y - VH / 2, 0, Math.max(0, map.worldH - VH));
-
-    if (silent) {
-      G.transitioning = false;
-      G.paused = false;
-      document.getElementById('transition').classList.add('hidden');
-    } else {
-      Transition.start(map.name, map.sub, () => {
-        G.transitioning = false;
-        G.paused = false;
-      });
-      Audio.sfx('portal');
-    }
-
-    if (index === 3 && !Quests.isComplete('boss_quest')) {
-      Quests.add('boss_quest', 'Derrote Morgath no trono', 0, 1);
-    }
-  },
-  refreshPortals() {
-    G.portals = [];
-    const map = MAPS[this.current];
-    for (const p of map.portals) {
-      let blocked = false;
-      if (p.targetMap === 2 && this.current === 1) blocked = !G.boulderBroken;
-      G.portals.push(new Portal(p.x, p.y, p.targetMap, p.label, blocked));
-    }
-  },
-  update(dt) {
-    if (this.transitionCooldown > 0) this.transitionCooldown -= dt;
-    for (const p of G.portals) {
-      p.update(dt);
-      if (!p.blocked && this.transitionCooldown <= 0 &&
-          Math.hypot(player.x - p.x, player.y - p.y) < p.r) {
-        this.transitionCooldown = 2;
-        this.load(p.targetMap);
-        return;
-      }
-    }
-  }
-};
-
-/* ==================== HUD ==================== */
-const hudCache = { hp: -1, mana: -1, rage: -1, boss: -1 };
-let hudEls = null, minimapCanvas, minimapCtx;
-
-function initHUD() {
-  hudEls = {
-    hpfill: document.getElementById('hpfill'),
-    hptext: document.getElementById('hptext'),
-    manafill: document.getElementById('manafill'),
-    manatext: document.getElementById('manatext'),
-    ragefill: document.getElementById('ragefill'),
-    bossfill: document.getElementById('bossfill'),
-    bossbar: document.getElementById('bossbar'),
-    rage: document.getElementById('rageoverlay')
-  };
-  minimapCanvas = document.getElementById('minimap');
-  minimapCtx = minimapCanvas.getContext('2d');
-}
-
-function updateHUD() {
-  if (!hudEls || !player) return;
-  const hp = Math.round(player.hp);
-  if (hp !== hudCache.hp) {
-    hudCache.hp = hp;
-    hudEls.hpfill.style.width = (hp / player.maxHp * 100) + '%';
-    hudEls.hptext.textContent = `${hp} / ${player.maxHp}`;
-  }
-  const mp = Math.round(player.mana);
-  if (mp !== hudCache.mana) {
-    hudCache.mana = mp;
-    hudEls.manafill.style.width = (mp / player.maxMana * 100) + '%';
-    hudEls.manatext.textContent = `${mp} / ${player.maxMana}`;
-  }
-  const ragePct = Math.round(player.rage / player.maxRage * 100);
-  if (ragePct !== hudCache.rage) {
-    hudCache.rage = ragePct;
-    hudEls.ragefill.style.width = ragePct + '%';
-  }
-  const engaged = boss && !boss.dead &&
-    Math.hypot(boss.x - player.x, boss.y - player.y) < 1000;
-  G.bossEngaged = !!engaged;
-  hudEls.bossbar.classList.toggle('hidden', !engaged);
-  if (engaged) {
-    const pct = Math.round(boss.hp / boss.maxHp * 100);
-    if (pct !== hudCache.boss) {
-      hudCache.boss = pct;
-      hudEls.bossfill.style.width = pct + '%';
-    }
-  }
-  hudEls.rage.classList.toggle('on', player.rage > 0);
-}
-
-function drawMinimap() {
-  if (!minimapCtx || !player) return;
-  const mw = minimapCanvas.width, mh = minimapCanvas.height;
-  const map = MAPS[MapSystem.current];
-  const sx = mw / map.worldW, sy = mh / map.worldH;
-  minimapCtx.clearRect(0, 0, mw, mh);
-  minimapCtx.fillStyle = 'rgba(20,28,40,0.85)'; minimapCtx.fillRect(0, 0, mw, mh);
-  const groundColor = MapSystem.current === 0 ? 'rgba(70,55,40,0.7)' :
-                      MapSystem.current === 2 ? 'rgba(30,20,50,0.7)' : 'rgba(24,40,30,0.7)';
-  minimapCtx.fillStyle = groundColor; minimapCtx.fillRect(2, 2, mw - 4, mh - 4);
-  if (map.buildings) {
-    for (const b of map.buildings) {
-      minimapCtx.fillStyle = 'rgba(140,100,60,0.9)';
-      minimapCtx.fillRect(b.x * sx - 3, b.y * sy - 3, 6, 6);
-    }
-  }
-  for (const p of G.portals) {
-    minimapCtx.fillStyle = p.blocked ? 'rgba(120,80,50,0.9)' : 'rgba(120,220,255,0.9)';
-    minimapCtx.beginPath(); minimapCtx.arc(p.x * sx, p.y * sy, 3, 0, TAU); minimapCtx.fill();
-  }
-  for (const n of G.npcs) {
-    minimapCtx.fillStyle = 'rgba(255,210,120,0.95)';
-    minimapCtx.beginPath(); minimapCtx.arc(n.x * sx, n.y * sy, 2.5, 0, TAU); minimapCtx.fill();
-  }
-  for (const e of G.enemies) {
-    if (e.dead) continue;
-    minimapCtx.fillStyle = 'rgba(255,90,60,0.9)';
-    minimapCtx.beginPath(); minimapCtx.arc(e.x * sx, e.y * sy, 2, 0, TAU); minimapCtx.fill();
-  }
-  if (boss && !boss.dead) {
-    minimapCtx.fillStyle = 'rgba(255,50,30,1)';
-    minimapCtx.beginPath(); minimapCtx.arc(boss.x * sx, boss.y * sy, 4, 0, TAU); minimapCtx.fill();
-  }
-  minimapCtx.save();
-  minimapCtx.translate(player.x * sx, player.y * sy);
-  minimapCtx.rotate(player.facing);
-  minimapCtx.fillStyle = 'rgba(200,240,255,1)';
-  minimapCtx.beginPath(); minimapCtx.moveTo(4, 0); minimapCtx.lineTo(-3, -3);
-  minimapCtx.lineTo(-3, 3); minimapCtx.closePath(); minimapCtx.fill();
-  minimapCtx.restore();
-}
-
-/* ==================== ILUMINAÇÃO ==================== */
-function drawLighting() {
-  const map = MAPS[MapSystem.current];
-  const p2 = boss && boss.phase === 2 && !boss.dead;
-  lctx.setTransform(1, 0, 0, 1, 0, 0);
-  lctx.globalCompositeOperation = 'source-over';
-  let ambientDark = 0.78;
-  if (map.ambient === 'cave') ambientDark = 0.84;
-  if (p2) ambientDark = 0.90;
-  lctx.fillStyle = p2 ? `rgba(26,2,6,${ambientDark})` : `rgba(4,6,18,${ambientDark})`;
-  lctx.fillRect(0, 0, VW, VH);
-  lctx.globalCompositeOperation = 'destination-out';
-  const lightAt = (wx, wy, radius, strength) => {
-    const sx = wx - camera.x + camera.shakeX;
-    const sy = wy - camera.y + camera.shakeY;
-    const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-    grad.addColorStop(0, `rgba(255,255,255,${strength})`);
-    grad.addColorStop(0.55, `rgba(255,255,255,${strength * 0.42})`);
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    lctx.fillStyle = grad;
-    lctx.beginPath(); lctx.arc(sx, sy, radius, 0, TAU); lctx.fill();
-  };
-  if (player && !player.dead) {
-    lightAt(player.x, player.y - 10, 240, 0.95);
-    lightAt(player.x, player.y - 10, 100, 0.7);
-  }
-  if (boss && !boss.dead) lightAt(boss.x, boss.y - 70, p2 ? 320 : 260, 0.85);
-  if (map.buildings) {
-    for (const b of map.buildings) {
-      if (b.type === 'blacksmith') lightAt(b.x, b.y - b.h * 0.5, 160, 0.6);
-      else if (b.type === 'shop') lightAt(b.x, b.y - b.h * 0.5, 140, 0.5);
-      else if (b.type === 'house1' || b.type === 'house2') lightAt(b.x, b.y - b.h * 0.5, 110, 0.4);
-      else if (b.type === 'well') lightAt(b.x, b.y, 80, 0.3);
-    }
-  }
-  if (galdur) for (const l of galdur.lanterns)
-    lightAt(galdur.x + Math.cos(l.a) * l.rad, galdur.y - 34 + Math.sin(l.a) * 16, 100, 0.5);
-  if (elara) lightAt(elara.x + 34, elara.y + 6, 180, 0.75);
-  if (brock) lightAt(brock.x + 30, brock.y, 130, 0.6);
-  for (const e of G.enemies) {
-    if (e instanceof GlassGolem && !e.dead) lightAt(e.x, e.y, 130, 0.5);
-    if (e instanceof CrystalCrab && !e.dead) lightAt(e.x, e.y, 100, 0.4);
-    if (e instanceof CaveBat && !e.dead) lightAt(e.x, e.y, 50, 0.3);
-  }
-  for (const p of G.portals) if (!p.blocked) lightAt(p.x, p.y, 130, 0.7);
-  lctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(lightCanvas, 0, 0);
-  ctx.save(); ctx.globalCompositeOperation = 'lighter';
-  const glowAt = (wx, wy, radius, color) => {
-    const sx = wx - camera.x + camera.shakeX;
-    const sy = wy - camera.y + camera.shakeY;
-    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-    grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(sx, sy, radius, 0, TAU); ctx.fill();
-  };
-  if (player && G.legendaryEquipped && !player.dead) {
-    const pulse = 0.10 + Math.sin(G.time * 5) * 0.04;
-    glowAt(player.x, player.y - 10, 70, `rgba(90,210,255,${pulse})`);
-  }
-  if (boss && !boss.dead) {
-    glowAt(boss.x, boss.y - 140, 130,
-      boss.phase === 2 ? 'rgba(255,70,40,0.20)' : 'rgba(110,255,150,0.14)');
-  }
-  ctx.restore();
-}
-
 /* ==================== RENDER ==================== */
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, VW, VH);
-  const map = MAPS[MapSystem.current];
+  const map = MAPS[G.currentMap];
 
   if (map.sky) {
     drawLayer(skyLayer, 0.03, 0.03, 0.9);
@@ -2486,7 +2476,7 @@ function render() {
     for (const n of G.npcs) {
       if (Math.hypot(n.x - player.x, n.y - player.y) < 130) drawInteractIcon(ctx, n.x, n.y - 80);
     }
-    if (MapSystem.current === 1 && !G.boulderBroken &&
+    if (G.currentMap === 1 && !G.boulderBroken &&
         Math.hypot(player.x - BOULDER.x, player.y - BOULDER.y) < 100 &&
         Inventory.count('dynamite') > 0) {
       drawInteractIcon(ctx, BOULDER.x, BOULDER.y - 90);
@@ -2517,7 +2507,7 @@ function drawInteractIcon(g, x, y) {
   g.restore();
 }
 
-/* ==================== VITÓRIA / NEW GAME+ ==================== */
+/* ==================== VITÓRIA ==================== */
 function showVictoryScreen() {
   G.paused = true;
   Quests.complete('boss_quest');
@@ -2528,7 +2518,6 @@ function showVictoryScreen() {
 }
 
 function startNewGamePlus() {
-  if (document.getElementById('victory').classList.contains('hidden')) return;
   document.getElementById('victory').classList.add('hidden');
   G.newGamePlus++;
   G.over = false;
@@ -2536,62 +2525,35 @@ function startNewGamePlus() {
   G.boulderBroken = false;
   Quests.active = []; Quests.completed = [];
   Quests.render();
-
   if (Inventory.count('dynamite') > 0) Inventory.remove('dynamite', Inventory.count('dynamite'));
-
   const oldUpgrades = { ...player.upgrades };
   const oldGold = Inventory.gold;
   const oldItems = { ...Inventory.items };
-
   player = new Player(0, 0);
   player.upgrades = oldUpgrades;
   player.applyUpgrades();
   player.hp = player.maxHp;
   player.mana = player.maxMana;
-
   Inventory.gold = oldGold;
   Inventory.items = oldItems;
   refreshGold(); refreshInventory();
-
   MapSystem.current = 0;
   MapSystem.load(0);
 }
 
 /* ==================== LOOP ==================== */
 let lastTime = performance.now();
-function loop(now) {
-  let dt = (now - lastTime) / 1000;
-  lastTime = now;
-  dt = Math.min(dt, 1 / 20);
-
-  try {
-    update(dt);
-    render();
-  } catch (e) {
-    console.error('Game loop error:', e);
-    G.transitioning = false;
-    G.paused = false;
-    Transition.active = false;
-    Transition.timer = 0;
-    document.getElementById('transition').classList.add('hidden');
-  }
-
-  requestAnimationFrame(loop);
-}
 
 function update(dt) {
   G.time += dt;
   Audio.update();
   Dialogue.update(dt);
   camera.updateShake(dt);
-  Transition.update(dt);
 
-  if (G.transitioning && !Transition.active) {
-    G.transitioning = false;
-    G.paused = false;
-  }
+  updateTransition(dt);
 
-  if (!G.running || G.transitioning) return;
+  if (!G.running) return;
+  if (G.transitioning) return;
   if (G.paused) return;
 
   updateParticles(dt);
@@ -2613,8 +2575,28 @@ function update(dt) {
   }
 }
 
+function loop(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  dt = Math.min(dt, 1 / 20);
+
+  try {
+    update(dt);
+    render();
+  } catch (e) {
+    console.error('Game loop error:', e);
+    G.transitioning = false;
+    G.paused = false;
+    _transitionState = null;
+    document.getElementById('transition').classList.add('hidden');
+  }
+
+  requestAnimationFrame(loop);
+}
+
 /* ==================== BOOT ==================== */
 function boot() {
+  console.log('[BOOT] Aethel v3.2 iniciando');
   buildLayers();
   Dialogue.init();
   initHUD();
@@ -2633,6 +2615,7 @@ function boot() {
   document.getElementById('newgameplusbtn').addEventListener('click', startNewGamePlus);
 
   requestAnimationFrame(loop);
+  console.log('[BOOT] Aethel pronto — MAPS:', MAPS.length, 'buildings mapa 0:', MAPS[0].buildings.length);
 }
 
 boot();
