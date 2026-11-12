@@ -1,12 +1,13 @@
 /* =========================================================
-   AETHEL — A Lâmina Estilhaçada
-   style.css — HUD, painéis e animações de interface
+   AETHEL — A Lâmina Estilhaçada v2
+   style.css — HUD expandido, tela cheia, transições
    ========================================================= */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   height: 100%;
+  width: 100%;
   background: #04050a;
   overflow: hidden;
   font-family: 'Georgia', 'Palatino Linotype', serif;
@@ -14,18 +15,16 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-body { display: flex; align-items: center; justify-content: center; }
+body { display: block; }
 
-/* ---------- Container com proporção fixa 16:9 ---------- */
+/* ---------- App ocupa 100% da tela ---------- */
 #app {
-  /* --u = 1% da largura do app. Toda a UI escala junto. */
   --u: min(1vw, 1.7778vh);
   position: relative;
-  width: min(100vw, 177.78vh);
-  height: min(56.25vw, 100vh);
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background: #04050a;
-  box-shadow: 0 0 calc(var(--u) * 6) rgba(80, 130, 255, 0.18);
   user-select: none;
 }
 
@@ -67,10 +66,21 @@ canvas#game {
   z-index: 2;
   pointer-events: none;
   background: radial-gradient(ellipse at center,
-              rgba(0,0,0,0) 45%,
-              rgba(0,0,0,0.45) 85%,
-              rgba(0,0,0,0.75) 100%);
+              rgba(0,0,0,0) 50%,
+              rgba(0,0,0,0.40) 85%,
+              rgba(0,0,0,0.72) 100%);
 }
+
+#mapflash {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: #04050a;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+#mapflash.on { opacity: 1; }
 
 /* =========================================================
    HUD
@@ -80,27 +90,66 @@ canvas#game {
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  padding: calc(var(--u) * 2);
+  padding: calc(var(--u) * 1.8);
+}
+
+/* ---------- Painel de vitais (esquerda) ---------- */
+.vitalspanel {
+  position: absolute;
+  top: calc(var(--u) * 1.8);
+  left: calc(var(--u) * 1.8);
+  display: flex;
+  gap: calc(var(--u) * 1.2);
+  align-items: center;
+  padding: calc(var(--u) * 1.0);
+  background: linear-gradient(135deg, rgba(18,22,38,0.88), rgba(8,10,20,0.92));
+  border: calc(var(--u) * 0.14) solid rgba(190,170,120,0.35);
+  border-radius: calc(var(--u) * 1.2);
+  box-shadow: 0 0 calc(var(--u) * 2.4) rgba(0,0,0,0.85),
+              inset 0 0 calc(var(--u) * 2) rgba(80,110,200,0.10);
+}
+
+.avatar {
+  width: calc(var(--u) * 5.6);
+  height: calc(var(--u) * 5.6);
+  border-radius: 50%;
+  border: calc(var(--u) * 0.18) solid rgba(200,180,130,0.55);
+  background: radial-gradient(circle at 40% 30%, #4a7fb5, #0a0a12 75%);
+  box-shadow: 0 0 calc(var(--u) * 1.6) rgba(80,180,255,0.35),
+              inset 0 0 calc(var(--u) * 1.4) rgba(0,0,0,0.7);
+  position: relative;
+  flex: 0 0 auto;
+}
+.avatar::before {
+  content: '';
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #e8c9a0, #a07050 70%);
+}
+.avatar::after {
+  content: '';
+  position: absolute;
+  inset: 8% 8% 60% 8%;
+  border-radius: 50% 50% 20% 20%;
+  background: linear-gradient(180deg, #141a2c, #2a3350);
 }
 
 .vitals {
-  position: absolute;
-  top: calc(var(--u) * 2);
-  left: calc(var(--u) * 2);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--u) * 0.8);
+  gap: calc(var(--u) * 0.55);
 }
 
 .bar {
   position: relative;
-  width: calc(var(--u) * 26);
-  height: calc(var(--u) * 2.1);
-  background: rgba(8, 10, 18, 0.82);
-  border: calc(var(--u) * 0.16) solid rgba(200, 190, 160, 0.35);
-  border-radius: calc(var(--u) * 1.2);
+  width: calc(var(--u) * 24);
+  height: calc(var(--u) * 1.7);
+  background: rgba(8, 10, 18, 0.85);
+  border: calc(var(--u) * 0.13) solid rgba(200, 190, 160, 0.30);
+  border-radius: calc(var(--u) * 0.9);
   overflow: hidden;
-  box-shadow: inset 0 0 calc(var(--u) * 1.4) rgba(0,0,0,0.9);
+  box-shadow: inset 0 0 calc(var(--u) * 1.2) rgba(0,0,0,0.9);
 }
 
 .bar .fill {
@@ -113,11 +162,15 @@ canvas#game {
 
 .bar.hp .fill {
   background: linear-gradient(180deg, #ff6b5e, #b81f2a 55%, #6b0d16);
-  box-shadow: 0 0 calc(var(--u) * 1.4) rgba(255, 70, 60, 0.65);
+  box-shadow: 0 0 calc(var(--u) * 1.2) rgba(255, 70, 60, 0.65);
 }
 .bar.mana .fill {
   background: linear-gradient(180deg, #7fd4ff, #2a7bd6 55%, #10306b);
-  box-shadow: 0 0 calc(var(--u) * 1.4) rgba(90, 180, 255, 0.65);
+  box-shadow: 0 0 calc(var(--u) * 1.2) rgba(90, 180, 255, 0.65);
+}
+.bar.rage .fill {
+  background: linear-gradient(180deg, #ffb347, #d63a1a 55%, #6b0d06);
+  box-shadow: 0 0 calc(var(--u) * 1.2) rgba(255, 120, 40, 0.65);
 }
 
 .bar span {
@@ -126,35 +179,82 @@ canvas#game {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(var(--u) * 1.05);
+  font-size: calc(var(--u) * 0.85);
   letter-spacing: calc(var(--u) * 0.06);
-  text-shadow: 0 calc(var(--u) * 0.15) calc(var(--u) * 0.5) #000;
+  text-shadow: 0 calc(var(--u) * 0.12) calc(var(--u) * 0.4) #000;
   color: #f2ecdd;
+}
+
+/* ---------- Localização e minimapa (direita) ---------- */
+.locationpanel {
+  position: absolute;
+  top: calc(var(--u) * 1.8);
+  right: calc(var(--u) * 1.8);
+  padding: calc(var(--u) * 1.0) calc(var(--u) * 1.4);
+  background: linear-gradient(135deg, rgba(18,22,38,0.88), rgba(8,10,20,0.92));
+  border: calc(var(--u) * 0.14) solid rgba(190,170,120,0.35);
+  border-radius: calc(var(--u) * 1.2);
+  box-shadow: 0 0 calc(var(--u) * 2.4) rgba(0,0,0,0.85),
+              inset 0 0 calc(var(--u) * 2) rgba(80,110,200,0.10);
+  text-align: right;
+  min-width: calc(var(--u) * 18);
+}
+
+.maptitle {
+  font-size: calc(var(--u) * 1.25);
+  letter-spacing: calc(var(--u) * 0.28);
+  color: #e7d7ab;
+  text-shadow: 0 0 calc(var(--u) * 1.2) rgba(255, 210, 120, 0.35);
+  transition: color 0.4s;
+}
+
+.mapsub {
+  font-size: calc(var(--u) * 0.82);
+  color: rgba(180, 190, 210, 0.6);
+  font-style: italic;
+  margin-top: calc(var(--u) * 0.2);
+  margin-bottom: calc(var(--u) * 0.7);
+}
+
+.minimap {
+  position: relative;
+  width: calc(var(--u) * 14);
+  height: calc(var(--u) * 9.6);
+  margin-left: auto;
+  border: calc(var(--u) * 0.12) solid rgba(190,170,120,0.35);
+  border-radius: calc(var(--u) * 0.6);
+  overflow: hidden;
+  background: rgba(8,10,18,0.6);
+}
+.minimap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* ---------- Barra do Boss ---------- */
 #bossbar {
   position: absolute;
-  top: calc(var(--u) * 2);
+  top: calc(var(--u) * 1.8);
   left: 50%;
   transform: translateX(-50%);
-  width: calc(var(--u) * 56);
+  width: calc(var(--u) * 52);
   text-align: center;
   transition: opacity 0.4s ease;
 }
 #bossbar.hidden { opacity: 0; }
 
 .bossname {
-  font-size: calc(var(--u) * 1.25);
-  letter-spacing: calc(var(--u) * 0.32);
+  font-size: calc(var(--u) * 1.15);
+  letter-spacing: calc(var(--u) * 0.28);
   color: #d8c9a3;
   text-shadow: 0 0 calc(var(--u) * 1.2) #000, 0 0 calc(var(--u) * 2) rgba(255,90,60,0.45);
-  margin-bottom: calc(var(--u) * 0.5);
+  margin-bottom: calc(var(--u) * 0.45);
 }
 
 .bar.boss {
   width: 100%;
-  height: calc(var(--u) * 1.7);
+  height: calc(var(--u) * 1.4);
   border-color: rgba(190, 140, 90, 0.5);
 }
 .bar.boss .fill {
@@ -162,22 +262,86 @@ canvas#game {
   box-shadow: 0 0 calc(var(--u) * 2) rgba(255, 90, 40, 0.7);
 }
 
+/* ---------- Poções (inferior esquerdo) ---------- */
+.potionbar {
+  position: absolute;
+  bottom: calc(var(--u) * 1.8);
+  left: calc(var(--u) * 1.8);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 0.9);
+  padding: calc(var(--u) * 0.8) calc(var(--u) * 1.2);
+  background: linear-gradient(135deg, rgba(18,22,38,0.88), rgba(8,10,20,0.92));
+  border: calc(var(--u) * 0.14) solid rgba(190,170,120,0.35);
+  border-radius: calc(var(--u) * 1.0);
+  box-shadow: 0 0 calc(var(--u) * 2.4) rgba(0,0,0,0.85);
+}
+
+.potionicon {
+  position: relative;
+  width: calc(var(--u) * 3.2);
+  height: calc(var(--u) * 3.8);
+  flex: 0 0 auto;
+}
+.potionicon .glass {
+  position: absolute;
+  inset: 0;
+  border: calc(var(--u) * 0.16) solid rgba(200, 225, 255, 0.55);
+  border-radius: 42% 42% 46% 46% / 24% 24% 62% 62%;
+  background: linear-gradient(120deg,
+              rgba(255,255,255,0.16) 0%,
+              rgba(255,255,255,0.03) 30%,
+              rgba(0,0,0,0.18) 100%);
+  z-index: 3;
+}
+.potionicon .liquid {
+  position: absolute;
+  left: 12%; right: 12%;
+  bottom: 8%;
+  height: 52%;
+  border-radius: 8% 8% 46% 46% / 8% 8% 60% 60%;
+  background: linear-gradient(180deg, #ff5d4a, #b3111f 55%, #4c0308);
+  box-shadow: 0 0 calc(var(--u) * 1.4) rgba(255, 60, 40, 0.75);
+  animation: liquidwave 2.6s ease-in-out infinite;
+  z-index: 2;
+}
+@keyframes liquidwave {
+  0%, 100% { transform: scaleY(1) rotate(0deg); }
+  50%      { transform: scaleY(1.07) rotate(-1.5deg); }
+}
+
+.potioninfo { line-height: 1.2; }
+.potionname {
+  font-size: calc(var(--u) * 0.82);
+  color: #e7d7ab;
+  letter-spacing: calc(var(--u) * 0.06);
+}
+.potioncount {
+  font-size: calc(var(--u) * 1.0);
+  color: #f2ecdd;
+  margin-top: calc(var(--u) * 0.2);
+}
+.keyhint {
+  font-size: calc(var(--u) * 0.75);
+  color: rgba(180, 190, 210, 0.55);
+}
+
 /* ---------- Dica de controles ---------- */
 #hint {
   position: absolute;
-  bottom: calc(var(--u) * 1.6);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: calc(var(--u) * 1.0);
+  bottom: calc(var(--u) * 1.8);
+  right: calc(var(--u) * 1.8);
+  max-width: calc(var(--u) * 34);
+  font-size: calc(var(--u) * 0.82);
+  line-height: 1.5;
   color: rgba(220, 212, 190, 0.55);
-  letter-spacing: calc(var(--u) * 0.05);
-  white-space: nowrap;
+  text-align: right;
   text-shadow: 0 0 calc(var(--u) * 0.8) #000;
 }
 #hint b { color: rgba(255, 220, 150, 0.9); }
 
 /* =========================================================
-   PAINÉIS (Inventário / Diálogo)
+   PAINÉIS
    ========================================================= */
 .panel {
   position: absolute;
@@ -261,7 +425,6 @@ canvas#game {
   font-style: italic;
 }
 
-/* ---------- Ícones desenhados em CSS ---------- */
 .icon {
   width: calc(var(--u) * 5);
   height: calc(var(--u) * 5);
@@ -310,14 +473,12 @@ canvas#game {
               0 0 calc(var(--u) * 1.2) rgba(255, 210, 90, 0.9);
 }
 
-/* ---------- Poção borbulhante (animação exclusiva) ---------- */
 .potion {
   position: relative;
   width: calc(var(--u) * 5);
   height: calc(var(--u) * 6);
   margin: 0 auto;
 }
-
 .potion .glass {
   position: absolute;
   inset: 0;
@@ -330,7 +491,6 @@ canvas#game {
   box-shadow: inset 0 0 calc(var(--u) * 1.2) rgba(255, 160, 160, 0.25);
   z-index: 3;
 }
-
 .potion .liquid {
   position: absolute;
   left: 12%; right: 12%;
@@ -342,11 +502,6 @@ canvas#game {
   animation: liquidwave 2.6s ease-in-out infinite;
   z-index: 2;
 }
-@keyframes liquidwave {
-  0%, 100% { transform: scaleY(1) rotate(0deg); }
-  50%      { transform: scaleY(1.07) rotate(-1.5deg); }
-}
-
 .potion .bubble {
   position: absolute;
   bottom: 14%;
@@ -543,5 +698,51 @@ canvas#game {
   margin-top: calc(var(--u) * 2.5);
   font-size: calc(var(--u) * 0.9);
   color: rgba(160, 170, 195, 0.4);
+  letter-spacing: calc(var(--u) * 0.1);
+}
+
+/* =========================================================
+   TRANSIÇÃO DE MAPA
+   ========================================================= */
+#transition {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(20, 25, 45, 0.98), rgba(2, 3, 8, 0.99));
+  transition: opacity 0.6s ease, visibility 0.6s;
+}
+#transition.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.transinner {
+  text-align: center;
+  animation: transIn 1.2s ease both;
+}
+@keyframes transIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.transname {
+  font-size: calc(var(--u) * 4.5);
+  letter-spacing: calc(var(--u) * 0.8);
+  color: #e9e2cd;
+  text-shadow:
+    0 0 calc(var(--u) * 1.6) rgba(120, 200, 255, 0.75),
+    0 0 calc(var(--u) * 5) rgba(60, 120, 255, 0.45);
+  animation: titleGlow 3s ease-in-out infinite;
+}
+
+.transsub {
+  font-size: calc(var(--u) * 1.4);
+  color: rgba(180, 200, 230, 0.65);
+  font-style: italic;
+  margin-top: calc(var(--u) * 1.2);
   letter-spacing: calc(var(--u) * 0.1);
 }
