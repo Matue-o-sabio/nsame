@@ -1,5 +1,8 @@
 /* =========================================================================
-   AETHEL v3 — Vila, Economia, Missões, 4 Mapas e New Game+
+   AETHEL v3.1 — Versão completa corrigida
+   - Transição sem setTimeout (não trava)
+   - Colisão em construções
+   - New Game+ preservado
    ========================================================================= */
 (function () {
 'use strict';
@@ -31,7 +34,7 @@ const G = {
   quests: {}, boulderBroken: false, newGamePlus: 0, totalGoldEarned: 0
 };
 
-/* ==================== INVENTÁRIO & ITENS ==================== */
+/* ==================== ITENS & INVENTÁRIO ==================== */
 const ITEMS = {
   potion:   { name: 'Cálice de Sangue', icon: 'potion', buy: 15, sell: 5, desc: 'Cura 22 HP e ativa fúria' },
   iron_ore: { name: 'Minério de Ferro', icon: 'ore', sell: 8, desc: 'Material de forja' },
@@ -91,8 +94,7 @@ function refreshInventory() {
 
 /* ==================== MISSÕES ==================== */
 const Quests = {
-  active: [],
-  completed: [],
+  active: [], completed: [],
   add(id, title, current = 0, target = 1) {
     if (this.active.some(q => q.id === id) || this.completed.includes(id)) return;
     this.active.push({ id, title, current, target });
@@ -171,12 +173,10 @@ function onKeyDown(code) {
     }
     return;
   }
-
   if (Shop.active) {
     if (code === 'Escape' || code === 'KeyE') Shop.close();
     return;
   }
-
   if (code === 'KeyI') { toggleInventory(); return; }
   if (code === 'Escape') {
     const inv = document.getElementById('inventory');
@@ -408,7 +408,6 @@ let skyLayer, mountainLayer, farForest, nearForest, foreLayer;
 let groundTile, groundPattern, villageGroundTile, villageGroundPattern, caveGroundTile, caveGroundPattern;
 
 function buildLayers() {
-  /* CÉU */
   skyLayer = makeLayer(LW, LH, (g) => {
     const grad = g.createLinearGradient(0, 0, 0, LH);
     grad.addColorStop(0, '#04050e'); grad.addColorStop(0.3, '#0b1030');
@@ -428,7 +427,6 @@ function buildLayers() {
     g.fillStyle = '#e2ecff'; g.beginPath(); g.arc(mx, my, mr, 0, TAU); g.fill();
   });
 
-  /* MONTANHAS */
   mountainLayer = makeLayer(LW, LH, (g) => {
     const drawRidge = (baseY, hMin, hMax, color, k1, k2, ph) => {
       g.fillStyle = color; g.beginPath(); g.moveTo(0, LH);
@@ -444,7 +442,6 @@ function buildLayers() {
     drawRidge(LH * 0.84, 12, 110, '#212a4c', 4, 7, 3.1);
   });
 
-  /* FLORESTA DISTANTE */
   farForest = makeLayer(LW, LH, (g) => {
     for (let i = 0; i < 100; i++) {
       const x = Math.random() * LW, baseY = LH * 0.86, h = rand(50, 160), w = rand(18, 38);
@@ -453,7 +450,6 @@ function buildLayers() {
     }
   });
 
-  /* FLORESTA PRÓXIMA */
   nearForest = makeLayer(LW, LH, (g) => {
     for (let i = 0; i < 44; i++) {
       const x = Math.random() * LW, baseY = LH * 0.98, h = rand(220, 440), tw = rand(18, 38);
@@ -475,7 +471,6 @@ function buildLayers() {
     }
   });
 
-  /* PRIMEIRO PLANO */
   foreLayer = makeLayer(LW, LH, (g) => {
     for (let i = 0; i < 28; i++) {
       const top = i < 14, x = Math.random() * LW;
@@ -488,7 +483,6 @@ function buildLayers() {
     }
   });
 
-  /* CHÃO FLORESTA */
   groundTile = makeLayer(256, 256, (g) => {
     g.fillStyle = '#18241c'; g.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 200; i++) {
@@ -504,7 +498,6 @@ function buildLayers() {
   });
   groundPattern = ctx.createPattern(groundTile, 'repeat');
 
-  /* CHÃO VILA */
   villageGroundTile = makeLayer(256, 256, (g) => {
     g.fillStyle = '#3a2f24'; g.fillRect(0, 0, 256, 256);
     for (let y = 0; y < 256; y += 32) {
@@ -519,7 +512,6 @@ function buildLayers() {
   });
   villageGroundPattern = ctx.createPattern(villageGroundTile, 'repeat');
 
-  /* CHÃO CAVERNA */
   caveGroundTile = makeLayer(256, 256, (g) => {
     g.fillStyle = '#12101c'; g.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 180; i++) {
@@ -549,7 +541,7 @@ function drawLayer(layer, fx, fy, alpha) {
   ctx.globalAlpha = 1;
 }
 
-/* ==================== PLAYER ==================== */
+/* ==================== PLAYER (com colisão) ==================== */
 class Player {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -576,6 +568,38 @@ class Player {
   }
 
   damageBonus() { return this.upgrades.steelSword ? 15 : 0; }
+
+  /* --- COLISÃO COM CONSTRUÇÕES --- */
+  checkBuildingCollision(px, py) {
+    const map = MAPS[MapSystem.current];
+    if (!map || !map.buildings) return false;
+    const pr = this.r;
+    for (const b of map.buildings) {
+      if (b.type === 'well') {
+        if (Math.hypot(px - b.x, py - b.y) < 40 + pr) return true;
+        continue;
+      }
+      const bx = b.x - b.w / 2;
+      const by = b.y - b.h;
+      const bw = b.w;
+      const bh = b.h;
+      const cx = clamp(px, bx, bx + bw);
+      const cy = clamp(py, by, by + bh);
+      if (Math.hypot(px - cx, py - cy) < pr) return true;
+    }
+    return false;
+  }
+
+  tryMove(dx, dy) {
+    if (dx !== 0) {
+      const nx = this.x + dx;
+      if (!this.checkBuildingCollision(nx, this.y)) this.x = nx;
+    }
+    if (dy !== 0) {
+      const ny = this.y + dy;
+      if (!this.checkBuildingCollision(this.x, ny)) this.y = ny;
+    }
+  }
 
   update(dt) {
     if (this.dead) {
@@ -624,12 +648,16 @@ class Player {
     }
     if (this.dashTime > 0) {
       this.dashTime -= dt;
-      this.x += this.dashDX * 940 * dt;
-      this.y += this.dashDY * 940 * dt;
+      this.tryMove(this.dashDX * 940 * dt, this.dashDY * 940 * dt);
+      if (G.relicEquipped && Math.random() < 0.7) {
+        P({ type: 'crow', x: this.x + rand(-18, 18), y: this.y + rand(-18, 10),
+            vx: rand(-90, 90), vy: rand(-110, -20),
+            life: rand(0.35, 0.75), size: rand(6, 11),
+            color: 'rgba(22,18,38,0.9)', drag: 0.92, add: false, rot: rand(0, TAU) });
+      }
     } else {
       const spd = this.baseSpeed * (this.rage > 0 ? 1.32 : 1);
-      this.x += ix * spd * dt;
-      this.y += iy * spd * dt;
+      this.tryMove(ix * spd * dt, iy * spd * dt);
     }
     if (this.moving) this.walkPhase += dt * 11;
 
@@ -1010,7 +1038,7 @@ class Morgath {
   }
 }
 
-/* ==================== INIMIGOS — VIDA REDUZIDA E MELEE ==================== */
+/* ==================== INIMIGOS ==================== */
 const ENEMY_VISION = 180;
 
 class MossStalker {
@@ -1105,7 +1133,6 @@ class GlassGolem {
     this.chargeCd = Math.max(0, this.chargeCd - dt);
     if (this.slow > 0) this.slow -= dt;
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
-
     if (this.state === 'idle') {
       const spd = (d > 100 ? 80 : -20) * (this.slow > 0 ? 0.5 : 1);
       if (d < ENEMY_VISION) {
@@ -1177,7 +1204,6 @@ class GlassGolem {
   }
 }
 
-/* NOVO INIMIGO — Morcego da Caverna */
 class CaveBat {
   constructor(x, y) {
     this.x = x; this.y = y; this.r = 18;
@@ -1193,9 +1219,7 @@ class CaveBat {
     this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
     this.diveCd = Math.max(0, this.diveCd - dt);
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
-
     if (this.state === 'idle') {
-      // movimento errático
       this.wobble += dt * 5;
       this.x += Math.cos(this.wobble * 2) * 40 * dt;
       this.y += Math.sin(this.wobble * 3) * 30 * dt;
@@ -1248,7 +1272,6 @@ class CaveBat {
   }
 }
 
-/* NOVO INIMIGO — Caranguejo de Cristal */
 class CrystalCrab {
   constructor(x, y) {
     this.x = x; this.y = y; this.r = 28;
@@ -1263,7 +1286,6 @@ class CrystalCrab {
     this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
     this.attackCd = Math.max(0, this.attackCd - dt);
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
-
     if (d < ENEMY_VISION && !p.dead) {
       if (d > 60) {
         this.x += (dx / d) * 70 * dt;
@@ -1281,7 +1303,7 @@ class CrystalCrab {
   }
   takeDamage(dmg, ang) {
     if (this.dead) return;
-    this.hp -= dmg - 3; // defesa
+    this.hp -= dmg - 3;
     this.hitFlash = 1;
     burstSparks(this.x, this.y, 8, '#9fe8ff', 260);
     if (this.hp <= 0) this.die();
@@ -1315,7 +1337,6 @@ class CrystalCrab {
     g.fillStyle = '#ff4a8a';
     g.beginPath(); g.arc(-8, -6, 2.2, 0, TAU); g.fill();
     g.beginPath(); g.arc(8, -6, 2.2, 0, TAU); g.fill();
-    // pinças
     g.strokeStyle = '#6a4ac0'; g.lineWidth = 5;
     g.beginPath(); g.moveTo(-22, -2); g.lineTo(-32, -12); g.stroke();
     g.beginPath(); g.moveTo(22, -2); g.lineTo(32, -12); g.stroke();
@@ -1323,7 +1344,6 @@ class CrystalCrab {
   }
 }
 
-/* NOVO INIMIGO — Troll da Caverna */
 class CaveTroll {
   constructor(x, y) {
     this.x = x; this.y = y; this.r = 40;
@@ -1338,7 +1358,6 @@ class CaveTroll {
     this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
     this.attackCd = Math.max(0, this.attackCd - dt);
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
-
     if (this.state === 'idle') {
       if (d < ENEMY_VISION && !p.dead) {
         if (d > 90) {
@@ -1387,9 +1406,7 @@ class CaveTroll {
     g.save(); g.globalAlpha = 0.4; g.fillStyle = '#000';
     g.beginPath(); g.ellipse(this.x, this.y + 30, 42, 14, 0, 0, TAU); g.fill(); g.restore();
     g.save(); g.translate(this.x, this.y + breathe);
-    if (this.state === 'windup') {
-      g.globalAlpha = 0.4 + Math.sin(this.stateT * 20) * 0.3;
-    }
+    if (this.state === 'windup') g.globalAlpha = 0.4 + Math.sin(this.stateT * 20) * 0.3;
     g.fillStyle = this.hitFlash > 0.3 ? '#fff' : '#3a5a3a';
     g.beginPath(); g.ellipse(0, 0, 32, 38, 0, 0, TAU); g.fill();
     g.fillStyle = '#2a4a2a';
@@ -1397,7 +1414,6 @@ class CaveTroll {
     g.fillStyle = '#ff5a2a';
     g.beginPath(); g.arc(-8, -32, 3, 0, TAU); g.fill();
     g.beginPath(); g.arc(8, -32, 3, 0, TAU); g.fill();
-    // braços
     g.strokeStyle = '#3a5a3a'; g.lineWidth = 12; g.lineCap = 'round';
     g.beginPath(); g.moveTo(-28, -6); g.lineTo(-46, 14); g.stroke();
     g.beginPath(); g.moveTo(28, -6); g.lineTo(46, 14); g.stroke();
@@ -1405,26 +1421,20 @@ class CaveTroll {
   }
 }
 
-/* ==================== DROP DE LOOT ==================== */
+/* ==================== LOOT ==================== */
 function dropLoot(x, y, opts) {
   const goldAmount = opts.gold || 0;
   for (let i = 0; i < goldAmount; i++) {
-    P({
-      type: 'coin',
-      x: x + rand(-15, 15), y: y + rand(-10, 5),
-      vx: rand(-80, 80), vy: rand(-150, -60),
-      life: 0.8, size: rand(3, 5), color: '#ffe066',
-      drag: 0.92, grav: 400, rot: 0, rotV: rand(-10, 10)
-    });
+    P({ type: 'coin', x: x + rand(-15, 15), y: y + rand(-10, 5),
+        vx: rand(-80, 80), vy: rand(-150, -60),
+        life: 0.8, size: rand(3, 5), color: '#ffe066',
+        drag: 0.92, grav: 400, rot: 0, rotV: rand(-10, 10) });
   }
   Inventory.addGold(goldAmount);
-
   if (opts.oreChance && Math.random() < opts.oreChance) {
     Inventory.add('iron_ore', 1);
     showToast('+1 Minério de Ferro');
-    if (Quests.isActive('iron_quest')) {
-      Quests.update('iron_quest', Inventory.count('iron_ore'));
-    }
+    if (Quests.isActive('iron_quest')) Quests.update('iron_quest', Inventory.count('iron_ore'));
   }
 }
 
@@ -1518,7 +1528,6 @@ class Elara {
   }
 }
 
-/* NOVO NPC — Brock, o Ferreiro */
 class Brock {
   constructor(x, y) {
     this.x = x; this.y = y; this.r = 24;
@@ -1526,12 +1535,10 @@ class Brock {
   }
   update(dt) { this.t += dt; }
   interact() {
-    // Se quest iron_quest ainda não começou, começa
     if (!Quests.isActive('iron_quest') && !Quests.isComplete('iron_quest') && !G.quests.brockIntro) {
       G.quests.brockIntro = true;
       Dialogue.start(DIALOGUES.brock_intro);
     } else if (Quests.isActive('iron_quest') && Inventory.count('iron_ore') >= 3) {
-      // Completar quest
       Inventory.remove('iron_ore', 3);
       Inventory.add('dynamite', 1);
       Quests.complete('iron_quest');
@@ -1545,34 +1552,25 @@ class Brock {
     const hammerSwing = Math.sin(this.t * 3) * 0.4;
     g.save(); g.globalAlpha = 0.3; g.fillStyle = '#000';
     g.beginPath(); g.ellipse(this.x, this.y + 16, 22, 8, 0, 0, TAU); g.fill(); g.restore();
-    // bigorna ao lado
     g.save(); g.translate(this.x + 30, this.y + 8);
     g.fillStyle = '#1a1a20';
     g.beginPath(); g.roundRect(-12, -8, 24, 16, 2); g.fill();
     g.fillStyle = '#2a2a35';
     g.beginPath(); g.roundRect(-14, -10, 28, 4, 2); g.fill();
     g.restore();
-    // faíscas ocasionais
-    if (Math.random() < 0.15) {
-      burstSparks(this.x + 30, this.y + 2, 3, '#ffb347', 100);
-    }
+    if (Math.random() < 0.15) burstSparks(this.x + 30, this.y + 2, 3, '#ffb347', 100);
     g.save(); g.translate(this.x, this.y + bob);
-    // corpo robusto
     g.fillStyle = '#4a2a1a';
     g.beginPath(); g.roundRect(-14, -14, 28, 32, 6); g.fill();
     g.fillStyle = '#6a3a1a';
     g.beginPath(); g.roundRect(-10, -10, 20, 20, 4); g.fill();
-    // cabeça
     g.fillStyle = '#d0a070'; g.beginPath(); g.arc(0, -22, 11, 0, TAU); g.fill();
     g.fillStyle = '#1a1a1a'; g.beginPath(); g.arc(0, -26, 11, Math.PI, TAU); g.fill();
-    // barba
     g.fillStyle = '#5a2a10';
     g.beginPath(); g.arc(0, -18, 9, 0, Math.PI); g.fill();
-    // olhos
     g.fillStyle = '#ffe066';
     g.beginPath(); g.arc(-4, -22, 1.5, 0, TAU); g.fill();
     g.beginPath(); g.arc(4, -22, 1.5, 0, TAU); g.fill();
-    // martelo
     g.save(); g.translate(16, -6); g.rotate(-0.6 + hammerSwing);
     g.strokeStyle = '#3a2a15'; g.lineWidth = 4; g.lineCap = 'round';
     g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -18); g.stroke();
@@ -1669,10 +1667,7 @@ const DIALOGUES = {
 const SHOP_DATA = {
   galdur: {
     name: 'Galdur — Mercador',
-    buy: [
-      { id: 'potion', price: 15 },
-      { id: 'iron_ore', price: 20 }
-    ],
+    buy: [{ id: 'potion', price: 15 }, { id: 'iron_ore', price: 20 }],
     sell: ['potion', 'iron_ore']
   },
   brock: {
@@ -1702,13 +1697,11 @@ const Shop = {
     document.getElementById('shop').classList.add('hidden');
   },
   render() {
-    document.querySelectorAll('.shoptab').forEach(t =>
-      t.classList.toggle('active', t.dataset.tab === this.tab));
+    document.querySelectorAll('.shoptab').forEach(t => t.classList.toggle('active', t.dataset.tab === this.tab));
     document.getElementById('shopgold').textContent = Inventory.gold;
     const list = document.getElementById('shoplist');
     list.innerHTML = '';
     const data = SHOP_DATA[this.current];
-
     if (this.tab === 'buy') {
       if (data.buy) {
         for (const entry of data.buy) {
@@ -1773,17 +1766,11 @@ const Shop = {
   },
   buyItem(id, price) {
     if (Inventory.gold < price) return;
-    Inventory.addGold(-price);
-    Inventory.add(id, 1);
-    Audio.sfx('buy');
-    this.render();
+    Inventory.addGold(-price); Inventory.add(id, 1); Audio.sfx('buy'); this.render();
   },
   sellItem(id, price) {
     if (Inventory.count(id) <= 0) return;
-    Inventory.remove(id, 1);
-    Inventory.addGold(price);
-    Audio.sfx('coin');
-    this.render();
+    Inventory.remove(id, 1); Inventory.addGold(price); Audio.sfx('coin'); this.render();
   },
   buyUpgrade(up) {
     if (Inventory.gold < up.price || player.upgrades[up.id]) return;
@@ -1796,7 +1783,7 @@ const Shop = {
   }
 };
 
-/* ==================== DIÁLOGO ==================== */
+/* ==================== DIÁLOGO UI ==================== */
 const Dialogue = {
   active: false, typing: false, tree: null, node: null, full: '', shown: 0, el: {},
   init() {
@@ -1896,8 +1883,6 @@ function tryInteract() {
     if (d < bestD) { bestD = d; best = n; }
   }
   if (best) { best.interact(); return; }
-
-  // Boulder
   if (MapSystem.current === 1 && !G.boulderBroken) {
     const bd = Math.hypot(player.x - BOULDER.x, player.y - BOULDER.y);
     if (bd < 100 && Inventory.count('dynamite') > 0) {
@@ -1923,6 +1908,7 @@ function blowBoulder() {
         grav: 500, rot: rand(0, TAU), rotV: rand(-10, 10), add: false });
   }
   showToast('💥 A passagem foi aberta!');
+  MapSystem.transitionCooldown = 1.2;
   MapSystem.refreshPortals();
 }
 
@@ -1938,7 +1924,6 @@ class Portal {
   update(dt) { this.t += dt; }
   draw(g) {
     if (this.blocked) {
-      // desenha pedra no lugar
       g.save(); g.translate(this.x, this.y);
       g.fillStyle = '#3a3024';
       g.beginPath(); g.ellipse(0, 0, 65, 55, 0, 0, TAU); g.fill();
@@ -2041,39 +2026,26 @@ function drawBuildings(g) {
 
 function drawBlacksmith(g, b) {
   const x = b.x, y = b.y, w = b.w, h = b.h;
-  // parede
   const wg = g.createLinearGradient(x, y - h, x, y);
   wg.addColorStop(0, '#5a3a25'); wg.addColorStop(1, '#2a1a10');
   g.fillStyle = wg; g.fillRect(x - w/2, y - h, w, h);
-  // telhado
   g.fillStyle = '#2a1a10';
   g.beginPath();
-  g.moveTo(x - w/2 - 15, y - h);
-  g.lineTo(x, y - h - 60);
-  g.lineTo(x + w/2 + 15, y - h);
+  g.moveTo(x - w/2 - 15, y - h); g.lineTo(x, y - h - 60); g.lineTo(x + w/2 + 15, y - h);
   g.closePath(); g.fill();
-  // porta
-  g.fillStyle = '#1a0f08';
-  g.fillRect(x - 25, y - 70, 50, 70);
-  // janela com brilho
+  g.fillStyle = '#1a0f08'; g.fillRect(x - 25, y - 70, 50, 70);
   const flicker = 0.7 + Math.sin(G.time * 8) * 0.15;
   const gg = g.createRadialGradient(x + 60, y - h * 0.6, 0, x + 60, y - h * 0.6, 40);
-  gg.addColorStop(0, `rgba(255,150,50,${flicker})`);
-  gg.addColorStop(1, 'rgba(255,80,20,0)');
+  gg.addColorStop(0, `rgba(255,150,50,${flicker})`); gg.addColorStop(1, 'rgba(255,80,20,0)');
   g.fillStyle = gg; g.beginPath(); g.arc(x + 60, y - h * 0.6, 40, 0, TAU); g.fill();
-  g.fillStyle = '#ff8a3a';
-  g.fillRect(x + 48, y - h * 0.7, 24, 24);
-  // chaminé com fumaça
-  g.fillStyle = '#3a2818';
-  g.fillRect(x - w/2 + 30, y - h - 70, 24, 40);
+  g.fillStyle = '#ff8a3a'; g.fillRect(x + 48, y - h * 0.7, 24, 24);
+  g.fillStyle = '#3a2818'; g.fillRect(x - w/2 + 30, y - h - 70, 24, 40);
   if (Math.random() < 0.4) {
     P({ type: 'spark', x: x - w/2 + 42 + rand(-8, 8), y: y - h - 80,
         vx: rand(-20, 20), vy: rand(-50, -20), life: rand(1, 2), size: rand(4, 8),
         color: 'rgba(80,70,60,0.5)', grav: -10, drag: 0.97, add: false });
   }
-  // placa
-  g.fillStyle = 'rgba(20,10,5,0.9)';
-  g.fillRect(x - 55, y - h - 45, 110, 26);
+  g.fillStyle = 'rgba(20,10,5,0.9)'; g.fillRect(x - 55, y - h - 45, 110, 26);
   g.strokeStyle = '#8a6a3a'; g.lineWidth = 2;
   g.strokeRect(x - 55, y - h - 45, 110, 26);
   g.font = 'bold 14px Georgia'; g.textAlign = 'center';
@@ -2087,33 +2059,23 @@ function drawShop(g, b) {
   g.fillStyle = wg; g.fillRect(x - w/2, y - h, w, h);
   g.fillStyle = '#1a1008';
   g.beginPath();
-  g.moveTo(x - w/2 - 20, y - h);
-  g.lineTo(x, y - h - 55);
-  g.lineTo(x + w/2 + 20, y - h);
+  g.moveTo(x - w/2 - 20, y - h); g.lineTo(x, y - h - 55); g.lineTo(x + w/2 + 20, y - h);
   g.closePath(); g.fill();
-  // porta
   g.fillStyle = '#1a0f08'; g.fillRect(x - 30, y - 80, 60, 80);
-  // janelas iluminadas
   for (let s = -1; s <= 1; s += 2) {
     const wx = x + s * 65;
     const gg = g.createRadialGradient(wx, y - h * 0.55, 0, wx, y - h * 0.55, 35);
     gg.addColorStop(0, 'rgba(255,220,120,0.85)'); gg.addColorStop(1, 'rgba(255,180,60,0)');
     g.fillStyle = gg; g.beginPath(); g.arc(wx, y - h * 0.55, 35, 0, TAU); g.fill();
-    g.fillStyle = '#ffe080';
-    g.fillRect(wx - 15, y - h * 0.7, 30, 30);
+    g.fillStyle = '#ffe080'; g.fillRect(wx - 15, y - h * 0.7, 30, 30);
     g.strokeStyle = '#3a2818'; g.lineWidth = 2;
     g.strokeRect(wx - 15, y - h * 0.7, 30, 30);
   }
-  // toldo
-  g.fillStyle = '#8a3a2a';
-  g.fillRect(x - w/2, y - h - 3, w, 12);
-  // caixas
+  g.fillStyle = '#8a3a2a'; g.fillRect(x - w/2, y - h - 3, w, 12);
   g.fillStyle = '#4a3520';
   g.fillRect(x - w/2 - 35, y - 30, 30, 30);
   g.fillRect(x - w/2 - 35, y - 55, 25, 25);
-  // placa
-  g.fillStyle = 'rgba(30,15,10,0.9)';
-  g.fillRect(x - 55, y - h - 40, 110, 28);
+  g.fillStyle = 'rgba(30,15,10,0.9)'; g.fillRect(x - 55, y - h - 40, 110, 28);
   g.strokeStyle = '#d4a030'; g.lineWidth = 2;
   g.strokeRect(x - 55, y - h - 40, 110, 28);
   g.font = 'bold 14px Georgia'; g.textAlign = 'center';
@@ -2127,34 +2089,26 @@ function drawHouse(g, b) {
   g.fillStyle = wg; g.fillRect(x - w/2, y - h, w, h);
   g.fillStyle = '#2a1a10';
   g.beginPath();
-  g.moveTo(x - w/2 - 15, y - h);
-  g.lineTo(x, y - h - 55);
-  g.lineTo(x + w/2 + 15, y - h);
+  g.moveTo(x - w/2 - 15, y - h); g.lineTo(x, y - h - 55); g.lineTo(x + w/2 + 15, y - h);
   g.closePath(); g.fill();
   g.fillStyle = '#1a0f08'; g.fillRect(x - 25, y - 65, 50, 65);
-  // janela
   const gg = g.createRadialGradient(x + 45, y - h * 0.6, 0, x + 45, y - h * 0.6, 30);
   gg.addColorStop(0, 'rgba(255,200,100,0.75)'); gg.addColorStop(1, 'rgba(255,160,50,0)');
   g.fillStyle = gg; g.beginPath(); g.arc(x + 45, y - h * 0.6, 30, 0, TAU); g.fill();
   g.fillStyle = '#ffd68a'; g.fillRect(x + 35, y - h * 0.7, 20, 20);
-  // chaminé
-  g.fillStyle = '#3a2818';
-  g.fillRect(x + 30, y - h - 60, 20, 30);
+  g.fillStyle = '#3a2818'; g.fillRect(x + 30, y - h - 60, 20, 30);
 }
 
 function drawWell(g, b) {
   const x = b.x, y = b.y;
   g.save(); g.translate(x, y);
-  // base
   g.fillStyle = '#3a3025';
   g.beginPath(); g.ellipse(0, 0, 45, 20, 0, 0, TAU); g.fill();
   g.fillStyle = '#2a2018';
   g.beginPath(); g.ellipse(0, -5, 38, 16, 0, 0, TAU); g.fill();
-  // água brilhando
   const wg = g.createRadialGradient(0, -5, 0, 0, -5, 30);
   wg.addColorStop(0, 'rgba(120,200,255,0.6)'); wg.addColorStop(1, 'rgba(60,120,200,0)');
   g.fillStyle = wg; g.beginPath(); g.ellipse(0, -5, 30, 12, 0, 0, TAU); g.fill();
-  // telhado
   g.fillStyle = '#4a3520';
   g.fillRect(-40, -60, 4, 55);
   g.fillRect(36, -60, 4, 55);
@@ -2164,10 +2118,49 @@ function drawWell(g, b) {
   g.restore();
 }
 
+/* ==================== TRANSITION (dt-based, sem setTimeout) ==================== */
+const Transition = {
+  active: false,
+  timer: 0,
+  hideAt: 1.0,
+  endAt: 1.6,
+  maxDuration: 4.0,
+  callback: null,
+  start(name, sub, cb) {
+    if (typeof Dialogue !== 'undefined' && Dialogue.active) Dialogue.close();
+    if (typeof Shop !== 'undefined' && Shop.active) Shop.close();
+    this.active = true;
+    this.timer = 0;
+    this.callback = cb;
+    G.transitioning = true;
+    G.paused = true;
+    const el = document.getElementById('transition');
+    document.getElementById('transname').textContent = name;
+    document.getElementById('transsub').textContent = sub;
+    el.classList.remove('hidden');
+  },
+  update(dt) {
+    if (!this.active) return;
+    this.timer += dt;
+    if (this.timer >= this.hideAt) {
+      document.getElementById('transition').classList.add('hidden');
+    }
+    if (this.timer >= this.endAt || this.timer >= this.maxDuration) {
+      this.active = false;
+      document.getElementById('transition').classList.add('hidden');
+      G.transitioning = false;
+      G.paused = false;
+      const cb = this.callback;
+      this.callback = null;
+      if (cb) cb();
+    }
+  }
+};
+
 /* ==================== MAP SYSTEM ==================== */
 const MapSystem = {
   current: 0, transitionCooldown: 0,
-  load(index) {
+  load(index, silent) {
     this.current = index;
     G.currentMap = index;
     G.transitioning = true;
@@ -2177,7 +2170,8 @@ const MapSystem = {
     camera.worldH = map.worldH;
 
     G.enemies = []; G.npcs = []; G.portals = [];
-    boss = null; particles.length = 0; galdur = elara = brock = null;
+    boss = null; particles.length = 0;
+    galdur = elara = brock = null;
 
     if (!player) player = new Player(map.spawn.x, map.spawn.y);
     else {
@@ -2186,7 +2180,6 @@ const MapSystem = {
     }
     player.applyUpgrades();
 
-    // NPCs
     if (index === 0) {
       galdur = new Galdur(1500, 780);
       elara = new Elara(900, 1100);
@@ -2194,7 +2187,6 @@ const MapSystem = {
       G.npcs = [galdur, elara, brock];
     }
 
-    // Inimigos
     for (const type of map.enemies) {
       let e = null;
       const ex = rand(400, map.worldW - 400);
@@ -2207,42 +2199,41 @@ const MapSystem = {
       if (e) G.enemies.push(e);
     }
 
-    // Boss
     if (map.boss) boss = new Morgath(map.boss.x, map.boss.y);
 
-    // Portais
     this.refreshPortals();
 
-    // HUD
     document.getElementById('maptitle').textContent = map.name;
     document.getElementById('mapsub').textContent = map.sub;
 
     camera.x = clamp(player.x - VW / 2, 0, Math.max(0, map.worldW - VW));
     camera.y = clamp(player.y - VH / 2, 0, Math.max(0, map.worldH - VH));
 
-    showTransition(map.name, map.sub, () => {
-      G.transitioning = false; G.paused = false;
-    });
-    Audio.sfx('portal');
+    if (silent) {
+      G.transitioning = false;
+      G.paused = false;
+      document.getElementById('transition').classList.add('hidden');
+    } else {
+      Transition.start(map.name, map.sub, () => {
+        G.transitioning = false;
+        G.paused = false;
+      });
+      Audio.sfx('portal');
+    }
 
-    // Quests por mapa
     if (index === 3 && !Quests.isComplete('boss_quest')) {
       Quests.add('boss_quest', 'Derrote Morgath no trono', 0, 1);
     }
   },
-
   refreshPortals() {
     G.portals = [];
     const map = MAPS[this.current];
     for (const p of map.portals) {
       let blocked = false;
-      if (p.targetMap === 2 && this.current === 1) {
-        blocked = !G.boulderBroken;
-      }
+      if (p.targetMap === 2 && this.current === 1) blocked = !G.boulderBroken;
       G.portals.push(new Portal(p.x, p.y, p.targetMap, p.label, blocked));
     }
   },
-
   update(dt) {
     if (this.transitionCooldown > 0) this.transitionCooldown -= dt;
     for (const p of G.portals) {
@@ -2257,18 +2248,7 @@ const MapSystem = {
   }
 };
 
-function showTransition(name, sub, done) {
-  const trans = document.getElementById('transition');
-  document.getElementById('transname').textContent = name;
-  document.getElementById('transsub').textContent = sub;
-  trans.classList.remove('hidden');
-  setTimeout(() => {
-    trans.classList.add('hidden');
-    setTimeout(() => { if (done) done(); }, 400);
-  }, 1200);
-}
-
-/* ==================== HUD & MINIMAP ==================== */
+/* ==================== HUD ==================== */
 const hudCache = { hp: -1, mana: -1, rage: -1, boss: -1 };
 let hudEls = null, minimapCanvas, minimapCtx;
 
@@ -2330,15 +2310,12 @@ function drawMinimap() {
   const groundColor = MapSystem.current === 0 ? 'rgba(70,55,40,0.7)' :
                       MapSystem.current === 2 ? 'rgba(30,20,50,0.7)' : 'rgba(24,40,30,0.7)';
   minimapCtx.fillStyle = groundColor; minimapCtx.fillRect(2, 2, mw - 4, mh - 4);
-
-  // construções
   if (map.buildings) {
     for (const b of map.buildings) {
       minimapCtx.fillStyle = 'rgba(140,100,60,0.9)';
       minimapCtx.fillRect(b.x * sx - 3, b.y * sy - 3, 6, 6);
     }
   }
-
   for (const p of G.portals) {
     minimapCtx.fillStyle = p.blocked ? 'rgba(120,80,50,0.9)' : 'rgba(120,220,255,0.9)';
     minimapCtx.beginPath(); minimapCtx.arc(p.x * sx, p.y * sy, 3, 0, TAU); minimapCtx.fill();
@@ -2369,15 +2346,13 @@ function drawMinimap() {
 function drawLighting() {
   const map = MAPS[MapSystem.current];
   const p2 = boss && boss.phase === 2 && !boss.dead;
-
   lctx.setTransform(1, 0, 0, 1, 0, 0);
   lctx.globalCompositeOperation = 'source-over';
   let ambientDark = 0.78;
-  if (map.ambient === 'cave') ambientDark = 0.94;
+  if (map.ambient === 'cave') ambientDark = 0.84;
   if (p2) ambientDark = 0.90;
   lctx.fillStyle = p2 ? `rgba(26,2,6,${ambientDark})` : `rgba(4,6,18,${ambientDark})`;
   lctx.fillRect(0, 0, VW, VH);
-
   lctx.globalCompositeOperation = 'destination-out';
   const lightAt = (wx, wy, radius, strength) => {
     const sx = wx - camera.x + camera.shakeX;
@@ -2389,14 +2364,11 @@ function drawLighting() {
     lctx.fillStyle = grad;
     lctx.beginPath(); lctx.arc(sx, sy, radius, 0, TAU); lctx.fill();
   };
-
   if (player && !player.dead) {
     lightAt(player.x, player.y - 10, 240, 0.95);
     lightAt(player.x, player.y - 10, 100, 0.7);
   }
   if (boss && !boss.dead) lightAt(boss.x, boss.y - 70, p2 ? 320 : 260, 0.85);
-
-  // construções iluminadas
   if (map.buildings) {
     for (const b of map.buildings) {
       if (b.type === 'blacksmith') lightAt(b.x, b.y - b.h * 0.5, 160, 0.6);
@@ -2405,23 +2377,18 @@ function drawLighting() {
       else if (b.type === 'well') lightAt(b.x, b.y, 80, 0.3);
     }
   }
-
   if (galdur) for (const l of galdur.lanterns)
     lightAt(galdur.x + Math.cos(l.a) * l.rad, galdur.y - 34 + Math.sin(l.a) * 16, 100, 0.5);
   if (elara) lightAt(elara.x + 34, elara.y + 6, 180, 0.75);
   if (brock) lightAt(brock.x + 30, brock.y, 130, 0.6);
-
   for (const e of G.enemies) {
     if (e instanceof GlassGolem && !e.dead) lightAt(e.x, e.y, 130, 0.5);
     if (e instanceof CrystalCrab && !e.dead) lightAt(e.x, e.y, 100, 0.4);
     if (e instanceof CaveBat && !e.dead) lightAt(e.x, e.y, 50, 0.3);
   }
   for (const p of G.portals) if (!p.blocked) lightAt(p.x, p.y, 130, 0.7);
-
   lctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(lightCanvas, 0, 0);
-
-  // brilhos aditivos
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   const glowAt = (wx, wy, radius, color) => {
     const sx = wx - camera.x + camera.shakeX;
@@ -2481,10 +2448,8 @@ function render() {
   ctx.fillStyle = gp;
   ctx.fillRect(camX - 60, camY - 60, VW + 120, VH + 120);
 
-  // construções (chão)
   drawBuildings(ctx);
 
-  // névoa
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 10; i++) {
     const t = G.time * 0.25 + i * 1.9;
@@ -2498,7 +2463,6 @@ function render() {
   }
   ctx.restore();
 
-  // folhas ambientes
   if (map.sky && Math.random() < 0.25) {
     P({ type: 'leaf', x: camX + rand(0, VW), y: camY + rand(-50, 100),
         vx: rand(-30, 30), vy: rand(20, 60),
@@ -2507,7 +2471,6 @@ function render() {
         drag: 0.99, grav: 15, rot: rand(0, TAU), rotV: rand(-2, 2), add: false });
   }
 
-  // entidades ordenadas
   const drawables = [];
   if (player) drawables.push(player);
   if (boss && !boss.dead) drawables.push(boss);
@@ -2519,15 +2482,10 @@ function render() {
   for (const d of drawables) d.draw(ctx);
   drawParticles(ctx);
 
-  // Indicador de interação
   if (!Dialogue.active && !G.paused && !G.transitioning && player && !player.dead) {
-    // NPCs
     for (const n of G.npcs) {
-      if (Math.hypot(n.x - player.x, n.y - player.y) < 130) {
-        drawInteractIcon(ctx, n.x, n.y - 80);
-      }
+      if (Math.hypot(n.x - player.x, n.y - player.y) < 130) drawInteractIcon(ctx, n.x, n.y - 80);
     }
-    // Boulder
     if (MapSystem.current === 1 && !G.boulderBroken &&
         Math.hypot(player.x - BOULDER.x, player.y - BOULDER.y) < 100 &&
         Inventory.count('dynamite') > 0) {
@@ -2570,20 +2528,17 @@ function showVictoryScreen() {
 }
 
 function startNewGamePlus() {
-  G.newGamePlus++;
+  if (document.getElementById('victory').classList.contains('hidden')) return;
   document.getElementById('victory').classList.add('hidden');
+  G.newGamePlus++;
   G.over = false;
-
-  // Reset progresso
   G.quests = {};
   G.boulderBroken = false;
   Quests.active = []; Quests.completed = [];
   Quests.render();
 
-  // Mantém inventory e gold
   if (Inventory.count('dynamite') > 0) Inventory.remove('dynamite', Inventory.count('dynamite'));
 
-  // Recria player mantendo upgrades
   const oldUpgrades = { ...player.upgrades };
   const oldGold = Inventory.gold;
   const oldItems = { ...Inventory.items };
@@ -2598,10 +2553,8 @@ function startNewGamePlus() {
   Inventory.items = oldItems;
   refreshGold(); refreshInventory();
 
-  // Vai para vila
   MapSystem.current = 0;
   MapSystem.load(0);
-  showToast('Novo Jogo+ iniciado — você mantém seus equipamentos');
 }
 
 /* ==================== LOOP ==================== */
@@ -2610,8 +2563,19 @@ function loop(now) {
   let dt = (now - lastTime) / 1000;
   lastTime = now;
   dt = Math.min(dt, 1 / 20);
-  update(dt);
-  render();
+
+  try {
+    update(dt);
+    render();
+  } catch (e) {
+    console.error('Game loop error:', e);
+    G.transitioning = false;
+    G.paused = false;
+    Transition.active = false;
+    Transition.timer = 0;
+    document.getElementById('transition').classList.add('hidden');
+  }
+
   requestAnimationFrame(loop);
 }
 
@@ -2620,6 +2584,12 @@ function update(dt) {
   Audio.update();
   Dialogue.update(dt);
   camera.updateShake(dt);
+  Transition.update(dt);
+
+  if (G.transitioning && !Transition.active) {
+    G.transitioning = false;
+    G.paused = false;
+  }
 
   if (!G.running || G.transitioning) return;
   if (G.paused) return;
@@ -2649,21 +2619,19 @@ function boot() {
   Dialogue.init();
   initHUD();
 
-  MapSystem.load(0);
-  document.getElementById('transition').classList.add('hidden');
-  G.transitioning = false;
+  MapSystem.load(0, true);
   refreshGold();
 
   document.getElementById('startbtn').addEventListener('click', () => {
     document.getElementById('startscreen').classList.add('hidden');
-    G.running = true; G.paused = false;
+    G.running = true;
+    G.paused = false;
     Audio.unlock(); Audio.sfx('nova');
     if (player) burstIce(player.x, player.y, 40, 0, 320);
   });
 
   document.getElementById('newgameplusbtn').addEventListener('click', startNewGamePlus);
 
-  // Fechar loja ao clicar fora (Escape já trata)
   requestAnimationFrame(loop);
 }
 
