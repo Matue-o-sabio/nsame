@@ -1,675 +1,232 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Projeto Ilha Blocky - Protótipo 3D</title>
-    <style>
-        /* ===== ESTILO PARA TELA CHEIA ===== */
-        html, body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;   /* remove barras de rolagem */
-            width: 100%;
-            height: 100%;
-            background: #87CEEB; /* cor de céu de fallback */
-            font-family: Arial, sans-serif;
-        }
-        #game-canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-        /* ===== INSTRUÇÕES NA TELA ===== */
-        #instrucoes {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            color: #fff;
-            background: rgba(0, 0, 0, 0.45);
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 13px;
-            line-height: 1.5;
-            pointer-events: none;
-            user-select: none;
-            text-shadow: 1px 1px 2px #000;
-        }
-        #instrucoes b { color: #ffd966; }
-        /* ===== CROSSHAIR SIMPLES (opcional) ===== */
-        #crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 6px;
-            height: 6px;
-            margin: -3px 0 0 -3px;
-            background: rgba(255, 255, 255, 0.7);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ecos de Aethelgard — GDD</title>
+<style>
+:root{
+  --bg:#f4f1ea; --surface:#ffffff; --text:#1c1a17; --muted:#5a564e;
+  --accent:#0e7c86; --accent2:#8a2d2d; --border:#ddd6c7; --code-bg:#f0ece0;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#15130f; --surface:#1e1b16; --text:#ece7da; --muted:#b4ac98;
+    --accent:#4fd0d9; --accent2:#e08a8a; --border:#352f26; --code-bg:#241f18;
+  }
+}
+*{box-sizing:border-box;}
+html{scroll-padding-top: env(safe-area-inset-top,0px);}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family: Georgia, 'Iowan Old Style', serif;
+  line-height:1.6;
+  padding-top: env(safe-area-inset-top,0px);
+  padding-bottom: env(safe-area-inset-bottom,0px);
+}
+header{
+  padding:3rem 1.5rem 2rem; text-align:center;
+  border-bottom:1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 10%, transparent), transparent);
+}
+header h1{font-size:2.2rem; margin:0 0 .4rem; letter-spacing:.5px;}
+header p{color:var(--muted); margin:0; font-style:italic;}
+nav{
+  display:flex; flex-wrap:wrap; gap:.5rem; justify-content:center;
+  padding:1rem 1rem; max-width:900px; margin:0 auto; font-family: system-ui, sans-serif; font-size:.82rem;
+}
+nav a{
+  color:var(--accent); text-decoration:none; border:1px solid var(--border);
+  padding:.3rem .7rem; border-radius:999px;
+}
+nav a:hover{background:var(--code-bg);}
+main{max-width:800px; margin:0 auto; padding:1rem 1.5rem 4rem;}
+section{padding:1.6rem 0; border-bottom:1px solid var(--border);}
+section:last-child{border-bottom:none;}
+h2{color:var(--accent); font-size:1.4rem; margin-top:0; font-family: system-ui, sans-serif;}
+h3{font-size:1.05rem; margin-bottom:.4rem; font-family: system-ui, sans-serif;}
+table{width:100%; border-collapse:collapse; margin:1rem 0; font-size:.92rem; font-family: system-ui, sans-serif;}
+th,td{border:1px solid var(--border); padding:.55rem .7rem; text-align:left; vertical-align:top;}
+th{background:var(--code-bg);}
+.tag{
+  display:inline-block; font-family: system-ui, sans-serif; font-size:.72rem;
+  color:var(--accent2); border:1px solid var(--accent2); border-radius:4px;
+  padding:.1rem .45rem; margin-bottom:.5rem;
+}
+.item-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:1rem 1.2rem; margin:.8rem 0;
+}
+.item-card b{color:var(--accent);}
+pre{
+  background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+  padding:1rem; overflow-x:auto; font-size:.8rem; line-height:1.5;
+}
+code{font-family: 'SF Mono', Menlo, Consolas, monospace;}
+.prompt{
+  background:var(--code-bg); border-left:3px solid var(--accent);
+  padding:.8rem 1rem; font-family: system-ui, sans-serif; font-size:.85rem;
+  color:var(--muted); margin:.6rem 0;
+}
+.prompt b{color:var(--text);}
+footer{text-align:center; color:var(--muted); font-size:.8rem; padding:2rem 1rem; font-family: system-ui, sans-serif;}
+@media (max-width:480px){ header h1{font-size:1.6rem;} }
+</style>
 </head>
 <body>
-
-    <!-- Instruções de controle exibidas ao jogador -->
-    <div id="instrucoes">
-        <b>WASD</b> mover &nbsp;|&nbsp; <b>Espaço</b> pular<br />
-        <b>Mouse</b> orbitar câmera &nbsp;|&nbsp; <b>Clique Esq.</b> disparar poder<br />
-        <i>Clique na tela para travar o mouse</i>
-    </div>
-    <div id="crosshair"></div>
-
-    <!-- ============================================================
-         IMPORTAÇÃO DO THREE.JS VIA CDN (módulo ES)
-         Utilizamos importmap para permitir o uso de "import ... from 'three'"
-         ============================================================ -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
-
-    <script type="module">
-    /* =====================================================================
-       IMPORTAÇÕES
-       ===================================================================== */
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    // Nota: Não usaremos OrbitControls diretamente para o jogador, mas ele
-    // ajuda a entender o padrão. A câmera do jogador é customizada abaixo.
-
-    /* =====================================================================
-       1. CONFIGURAÇÃO DO RENDERER, CENA E CÂMERA
-       ===================================================================== */
-    const canvas = document.createElement('canvas');
-    canvas.id = 'game-canvas';
-    document.body.appendChild(canvas);
-
-    // Renderer com Anti-Aliasing e sombras
-    const renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        antialias: true
-    });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;                       // sombras dinâmicas
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;        // sombras suaves
-    renderer.outputColorSpace = THREE.SRGBColorSpace;        // cores corretas
-
-    // Cena principal
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);            // céu azul
-    scene.fog = new THREE.Fog(0x87CEEB, 60, 220);            // névoa ao longe
-
-    // Câmera em perspectiva (terceira pessoa)
-    const camera = new THREE.PerspectiveCamera(
-        65,                                     // FOV
-        window.innerWidth / window.innerHeight, // aspect
-        0.1,                                    // near
-        500                                     // far
-    );
-    camera.position.set(0, 8, 12);
-
-    /* =====================================================================
-       2. ILUMINAÇÃO (AmbientLight + DirectionalLight simulando sol)
-       ===================================================================== */
-    // Luz ambiente suave para preencher sombras
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-    scene.add(ambientLight);
-
-    // Luz direcional (sol) com sombras
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
-    sunLight.position.set(40, 60, 25);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
-    sunLight.shadow.camera.near = 1;
-    sunLight.shadow.camera.far = 200;
-    sunLight.shadow.camera.left = -80;
-    sunLight.shadow.camera.right = 80;
-    sunLight.shadow.camera.top = 80;
-    sunLight.shadow.camera.bottom = -80;
-    sunLight.shadow.bias = -0.0005;
-    scene.add(sunLight);
-    scene.add(sunLight.target);
-
-    // Luz hemisférica extra para dar um tom de céu/terra (opcional, deixa mais bonito)
-    const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.35);
-    scene.add(hemiLight);
-
-    /* =====================================================================
-       3. AMBIENTE: OCEANO E ILHA
-       ===================================================================== */
-
-    // ---------- 3.1 OCEANO (plano grande e azul) ----------
-    const oceanGeometry = new THREE.PlaneGeometry(400, 400, 1, 1);
-    const oceanMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1E90FF,
-        transparent: true,
-        opacity: 0.85,
-        roughness: 0.2,
-        metalness: 0.1
-    });
-    const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
-    ocean.rotation.x = -Math.PI / 2;
-    ocean.position.y = -0.6;                 // levemente abaixo do nível da ilha
-    ocean.receiveShadow = true;
-    scene.add(ocean);
-
-    // ---------- 3.2 ILHA PRINCIPAL (base grande de "terra") ----------
-    // [SUBSTITUIÇÃO FUTURA] Aqui você pode trocar esta caixa grande por um
-    // modelo .glb de ilha feito no Blender. Basta fazer:
-    //   const loader = new GLTFLoader();
-    //   loader.load('ilha.glb', (gltf) => { scene.add(gltf.scene); });
-    const ilhaGroup = new THREE.Group();
-    scene.add(ilhaGroup);
-
-    const materialTerra = new THREE.MeshStandardMaterial({ color: 0x6ab04c, roughness: 0.9 });
-    const materialTerraEscura = new THREE.MeshStandardMaterial({ color: 0x4a8f3c, roughness: 0.9 });
-    const materialAreia = new THREE.MeshStandardMaterial({ color: 0xE9D8A6, roughness: 1.0 });
-    const materialPedra = new THREE.MeshStandardMaterial({ color: 0x8d8d8d, roughness: 0.8 });
-
-    // Base principal (bloco grande de terra)
-    const baseIlha = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 60), materialTerra);
-    baseIlha.position.set(0, -0.5, 0);
-    baseIlha.receiveShadow = true;
-    baseIlha.castShadow = true;
-    ilhaGroup.add(baseIlha);
-
-    // Faixa de areia ao redor da base (um pouco maior e mais baixa)
-    const areia = new THREE.Mesh(new THREE.BoxGeometry(64, 1.5, 64), materialAreia);
-    areia.position.set(0, -2.6, 0);
-    areia.receiveShadow = true;
-    areia.castShadow = true;
-    ilhaGroup.add(areia);
-
-    // ---------- 3.3 ELEVAÇÕES / TERRENO PROCEDURAL ----------
-    // Colinas e plataformas em degraus (estilo blocky). Cada degrau é um
-    // BoxGeometry posicionado em alturas diferentes. O jogador pode subir
-    // neles por causa da colisão AABB simples implementada depois.
-    const colinas = [
-        // [x, y, z, largura, altura, profundidade]
-        [ -14, 3,  -10, 14, 3, 14 ],
-        [ -14, 6,  -10, 10, 3, 10 ],
-        [  18, 3,   14, 12, 3, 12 ],
-        [  18, 6,   14,  8, 3,  8 ],
-        [   0, 3,   20, 10, 3,  8 ],
-        [ -20, 3,   18,  8, 3, 10 ],
-        [  22, 3,  -20, 10, 3, 10 ]
-    ];
-    const colinasMeshes = [];
-    colinas.forEach(([x, y, z, w, h, d]) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materialTerraEscura);
-        m.position.set(x, y, z);
-        m.castShadow = true;
-        m.receiveShadow = true;
-        ilhaGroup.add(m);
-        colinasMeshes.push(m);
-    });
-
-    // Alguns blocos de pedra espalhados (obstáculos)
-    const pedrasMeshes = [];
-    const posicoesPedras = [
-        [ 8, 1.5, 8], [-6, 1.5, 6], [10, 1.5, -8],
-        [-10, 1.5, -12], [4, 1.5, -16], [-18, 1.5, 0]
-    ];
-    posicoesPedras.forEach(([x, y, z]) => {
-        const pedra = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), materialPedra);
-        pedra.position.set(x, y, z);
-        pedra.castShadow = true;
-        pedra.receiveShadow = true;
-        ilhaGroup.add(pedra);
-        pedrasMeshes.push(pedra);
-    });
-
-    /* =====================================================================
-       4. ÁRVORES DE BLOCOS (procedurais)
-       [SUBSTITUIÇÃO FUTURA] Troque o grupo "arvore" por um modelo .glb
-       ===================================================================== */
-    const materialTronco = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 1 });
-    const materialFolha = new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.9 });
-
-    function criarArvore(x, z, escala = 1) {
-        const arvore = new THREE.Group();
-
-        const tronco = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), materialTronco);
-        tronco.position.y = 2.5;
-        tronco.castShadow = true;
-        tronco.receiveShadow = true;
-        arvore.add(tronco);
-
-        // Copa feita de 3 cubos em degraus
-        const copa1 = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 4), materialFolha);
-        copa1.position.y = 6;
-        copa1.castShadow = true;
-        copa1.receiveShadow = true;
-        arvore.add(copa1);
-
-        const copa2 = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), materialFolha);
-        copa2.position.y = 8;
-        copa2.castShadow = true;
-        copa2.receiveShadow = true;
-        arvore.add(copa2);
-
-        const copa3 = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 2), materialFolha);
-        copa3.position.y = 9.5;
-        copa3.castShadow = true;
-        copa3.receiveShadow = true;
-        arvore.add(copa3);
-
-        arvore.position.set(x, 2.5, z); // base do tronco no topo da ilha (y=2.5)
-        arvore.scale.setScalar(escala);
-        return arvore;
-    }
-
-    // Posições das árvores na ilha
-    const posicoesArvores = [
-        [-5, 5], [6, 3], [-8, -4], [12, 6], [-16, 8],
-        [15, -12], [-12, 14], [20, 2], [-22, -6], [3, -20]
-    ];
-    posicoesArvores.forEach(([x, z]) => {
-        const a = criarArvore(x, z, 0.9 + Math.random() * 0.4);
-        ilhaGroup.add(a);
-    });
-
-    /* =====================================================================
-       5. PERSONAGEM (AVATAR ESTILO ROBLOX)
-       [SUBSTITUIÇÃO FUTURA] Importe um .glb/.gltf do seu personagem e
-       substitua este grupo "player". Exemplo:
-           const loader = new GLTFLoader();
-           loader.load('personagem.glb', (gltf) => {
-               player.remove(...player.children);
-               player.add(gltf.scene);
-           });
-       ===================================================================== */
-    const player = new THREE.Group();
-
-    // Cabeça
-    const cabecaGeo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
-    const cabecaMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd });
-    const cabeca = new THREE.Mesh(cabecaGeo, cabecaMat);
-    cabeca.position.y = 3.3;
-    cabeca.castShadow = true;
-    cabeca.receiveShadow = true;
-    player.add(cabeca);
-
-    // Olhos (dois cubinhos pretos)
-    const olhoGeo = new THREE.BoxGeometry(0.25, 0.25, 0.1);
-    const olhoMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const olhoEsq = new THREE.Mesh(olhoGeo, olhoMat);
-    olhoEsq.position.set(-0.35, 3.45, 0.82);
-    player.add(olhoEsq);
-    const olhoDir = olhoEsq.clone();
-    olhoDir.position.x = 0.35;
-    player.add(olhoDir);
-
-    // Tronco
-    const troncoGeo = new THREE.BoxGeometry(1.8, 2.2, 1.0);
-    const troncoMat = new THREE.MeshStandardMaterial({ color: 0x2E86DE });
-    const tronco = new THREE.Mesh(troncoGeo, troncoMat);
-    tronco.position.y = 1.7;
-    tronco.castShadow = true;
-    tronco.receiveShadow = true;
-    player.add(tronco);
-
-    // Braços
-    const bracoGeo = new THREE.BoxGeometry(0.6, 2.0, 0.7);
-    const bracoMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd });
-
-    const bracoEsq = new THREE.Mesh(bracoGeo, bracoMat);
-    bracoEsq.position.set(-1.25, 1.75, 0);
-    bracoEsq.castShadow = true;
-    bracoEsq.receiveShadow = true;
-    player.add(bracoEsq);
-
-    const bracoDir = bracoEsq.clone();
-    bracoDir.position.x = 1.25;
-    player.add(bracoDir);
-
-    // Pernas
-    const pernaGeo = new THREE.BoxGeometry(0.75, 1.6, 0.8);
-    const pernaMat = new THREE.MeshStandardMaterial({ color: 0x2C3E50 });
-
-    const pernaEsq = new THREE.Mesh(pernaGeo, pernaMat);
-    pernaEsq.position.set(-0.5, -0.4, 0);
-    pernaEsq.castShadow = true;
-    pernaEsq.receiveShadow = true;
-    player.add(pernaEsq);
-
-    const pernaDir = pernaEsq.clone();
-    pernaDir.position.x = 0.5;
-    player.add(pernaDir);
-
-    // O centro do player fica na base dos pés (y=0 do grupo = chão)
-    player.position.set(0, 2.5, 0); // começa em cima da ilha
-    scene.add(player);
-
-    // ---------- Variáveis de física do jogador ----------
-    const playerState = {
-        velocity: new THREE.Vector3(0, 0, 0),
-        onGround: false,
-        speed: 9.0,
-        jumpForce: 11.0,
-        gravity: -28.0,
-        radius: 0.9,           // "raio" aproximado para colisão
-        height: 4.0            // altura total aproximada
-    };
-
-    /* =====================================================================
-       6. CONTROLES: TECLADO E MOUSE (CÂMERA EM TERCEIRA PESSOA)
-       ===================================================================== */
-    const keys = { w: false, a: false, s: false, d: false, space: false };
-
-    window.addEventListener('keydown', (e) => {
-        if (e.code === 'KeyW') keys.w = true;
-        if (e.code === 'KeyA') keys.a = true;
-        if (e.code === 'KeyS') keys.s = true;
-        if (e.code === 'KeyD') keys.d = true;
-        if (e.code === 'Space') { keys.space = true; e.preventDefault(); }
-    });
-    window.addEventListener('keyup', (e) => {
-        if (e.code === 'KeyW') keys.w = false;
-        if (e.code === 'KeyA') keys.a = false;
-        if (e.code === 'KeyS') keys.s = false;
-        if (e.code === 'KeyD') keys.d = false;
-        if (e.code === 'Space') keys.space = false;
-    });
-
-    // ----- Câmera orbital em terceira pessoa -----
-    // A câmera gira em torno do jogador com base no movimento do mouse.
-    // yaw = rotação horizontal, pitch = vertical.
-    let cameraYaw = 0;       // em radianos
-    let cameraPitch = 0.35;  // inclinação inicial (olhando levemente para baixo)
-    const cameraDistance = 12;
-    const mouseSensitivity = 0.0025;
-
-    // Pointer Lock para capturar o mouse
-    let pointerLocked = false;
-    canvas.addEventListener('click', () => {
-        if (!pointerLocked) {
-            canvas.requestPointerLock();
-        }
-    });
-    document.addEventListener('pointerlockchange', () => {
-        pointerLocked = document.pointerLockElement === canvas;
-    });
-    document.addEventListener('mousemove', (e) => {
-        if (!pointerLocked) return;
-        cameraYaw   -= e.movementX * mouseSensitivity;
-        cameraPitch -= e.movementY * mouseSensitivity;
-        // Limita o pitch para não virar a câmera de cabeça para baixo
-        const maxPitch = Math.PI / 2 - 0.15;
-        cameraPitch = Math.max(-maxPitch, Math.min(maxPitch, cameraPitch));
-    });
-
-    /* =====================================================================
-       7. MECÂNICA DE HABILIDADE: PROJÉTIL "PODER" NO CLIQUE ESQUERDO
-       [SUBSTITUIÇÃO FUTURA] Troque o projétil por um modelo .glb de bola
-       de fogo / raio e adicione animações/partículas.
-       ===================================================================== */
-    const projeteis = [];   // array de projéteis ativos
-
-    function dispararPoder() {
-        // Material brilhante (MeshBasicMaterial) + PointLight
-        const projMat = new THREE.MeshBasicMaterial({ color: 0x00E5FF });
-        const projGeo = new THREE.SphereGeometry(0.55, 16, 16);
-        const proj = new THREE.Mesh(projGeo, projMat);
-        proj.castShadow = false;    // MeshBasicMaterial não recebe sombra, mas ok
-
-        // Ponto de origem: na frente e na altura do peito do jogador
-        const origem = new THREE.Vector3(0, 1.8, 0);
-        origem.applyMatrix4(player.matrixWorld);
-        proj.position.copy(origem);
-
-        // Luz pontual no projétil
-        const luz = new THREE.PointLight(0x00E5FF, 2.5, 12);
-        proj.add(luz);
-
-        // Direção: para onde o jogador está olhando (mesma direção da câmera
-        // projetada no plano horizontal, com leve ajuste vertical)
-        const dirCamera = new THREE.Vector3();
-        camera.getWorldDirection(dirCamera);
-        dirCamera.y = 0.05; // leve inclinação para cima, estilo "poder"
-        dirCamera.normalize();
-
-        // Velocidade do projétil
-        const velocidade = 38;
-        proj.userData.velocidade = dirCamera.clone().multiplyScalar(velocidade);
-        proj.userData.tempoVida = 3.0;   // segundos
-
-        scene.add(proj);
-        projeteis.push(proj);
-    }
-
-    // Listener de clique esquerdo (quando o mouse está travado)
-    document.addEventListener('mousedown', (e) => {
-        if (e.button === 0 && pointerLocked) {
-            dispararPoder();
-        }
-    });
-
-    /* =====================================================================
-       8. SISTEMA DE COLISÃO SIMPLES (AABB / distância)
-       Para simplificar, consideramos o jogador como uma esfera/capsula
-       e checamos colisão com blocos da ilha (caixas) e com o chão.
-       ===================================================================== */
-
-    // Lista de "caixas de colisão" do mundo. Cada entrada é um Box3.
-    // Reunimos os objetos que o jogador deve colidir.
-    const colisores = [];
-
-    function registrarColisor(mesh) {
-        // Atualiza a matrixWorld para garantir posição correta
-        mesh.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(mesh);
-        colisores.push(box);
-    }
-
-    // Registra a base da ilha, as colinas, pedras e troncos de árvores
-    registrarColisor(baseIlha);
-    colinasMeshes.forEach(registrarColisor);
-    pedrasMeshes.forEach(registrarColisor);
-
-    // Para as árvores, registramos apenas o tronco (para não colidir com folhas)
-    ilhaGroup.children.forEach((child) => {
-        if (child.isGroup) {
-            // É uma árvore: o primeiro filho é o tronco
-            const troncoMesh = child.children[0];
-            if (troncoMesh) {
-                // Ajusta para a posição global
-                const box = new THREE.Box3().setFromObject(troncoMesh);
-                colisores.push(box);
-            }
-        }
-    });
-
-    // Verifica colisão do jogador (como um ponto com raio) contra as caixas
-    // Retorna um vetor de "empurrão" para resolver a colisão.
-    function resolverColisoes(posicao, raio) {
-        const empurrao = new THREE.Vector3();
-        const playerBox = new THREE.Box3(
-            new THREE.Vector3(posicao.x - raio, posicao.y, posicao.z - raio),
-            new THREE.Vector3(posicao.x + raio, posicao.y + playerState.height, posicao.z + raio)
-        );
-
-        for (const box of colisores) {
-            if (playerBox.intersectsBox(box)) {
-                // Calcula sobreposição em cada eixo
-                const overlapX = Math.min(playerBox.max.x, box.max.x) - Math.max(playerBox.min.x, box.min.x);
-                const overlapY = Math.min(playerBox.max.y, box.max.y) - Math.max(playerBox.min.y, box.min.y);
-                const overlapZ = Math.min(playerBox.max.z, box.max.z) - Math.max(playerBox.min.z, box.min.z);
-
-                // Empurra pelo eixo de menor sobreposição
-                if (overlapX < overlapY && overlapX < overlapZ) {
-                    const dir = (posicao.x < box.getCenter(new THREE.Vector3()).x) ? -1 : 1;
-                    empurrao.x += dir * overlapX;
-                } else if (overlapZ < overlapY) {
-                    const dir = (posicao.z < box.getCenter(new THREE.Vector3()).z) ? -1 : 1;
-                    empurrao.z += dir * overlapZ;
-                } else {
-                    // Colisão vertical: se estiver caindo em cima do bloco, sobe
-                    if (posicao.y + 0.1 < box.max.y && playerState.velocity.y <= 0) {
-                        empurrao.y += overlapY;
-                        playerState.onGround = true;
-                        playerState.velocity.y = 0;
-                    }
-                }
-            }
-        }
-        return empurrao;
-    }
-
-    /* =====================================================================
-       9. LOOP DE ANIMAÇÃO PRINCIPAL
-       ===================================================================== */
-    const clock = new THREE.Clock();
-
-    function animate() {
-        requestAnimationFrame(animate);
-        const delta = Math.min(clock.getDelta(), 0.05); // limita delta para estabilidade
-
-        /* ---------- 9.1 Movimento do jogador (relativo à câmera) ---------- */
-        // Direção frontal da câmera no plano XZ
-        const frente = new THREE.Vector3();
-        camera.getWorldDirection(frente);
-        frente.y = 0;
-        frente.normalize();
-
-        const direita = new THREE.Vector3().crossVectors(frente, new THREE.Vector3(0, 1, 0)).normalize();
-
-        // Vetor de movimento desejado
-        const movimento = new THREE.Vector3();
-        if (keys.w) movimento.add(frente);
-        if (keys.s) movimento.sub(frente);
-        if (keys.d) movimento.add(direita);
-        if (keys.a) movimento.sub(direita);
-
-        if (movimento.lengthSq() > 0) {
-            movimento.normalize();
-            // Rotaciona o avatar para "olhar" na direção do movimento
-            const angulo = Math.atan2(movimento.x, movimento.z);
-            player.rotation.y = angulo; // suavização opcional poderia ser feita aqui
-        }
-
-        // Aplica velocidade horizontal
-        const velocidadeAlvo = movimento.clone().multiplyScalar(playerState.speed);
-        playerState.velocity.x = THREE.MathUtils.lerp(playerState.velocity.x, velocidadeAlvo.x, 0.25);
-        playerState.velocity.z = THREE.MathUtils.lerp(playerState.velocity.z, velocidadeAlvo.z, 0.25);
-
-        /* ---------- 9.2 Pulo e gravidade ---------- */
-        if (keys.space && playerState.onGround) {
-            playerState.velocity.y = playerState.jumpForce;
-            playerState.onGround = false;
-        }
-
-        // Aplica gravidade
-        playerState.velocity.y += playerState.gravity * delta;
-
-        /* ---------- 9.3 Integração de posição ---------- */
-        const novaPosicao = player.position.clone();
-        novaPosicao.x += playerState.velocity.x * delta;
-        novaPosicao.y += playerState.velocity.y * delta;
-        novaPosicao.z += playerState.velocity.z * delta;
-
-        /* ---------- 9.4 Colisão e chão ---------- */
-        playerState.onGround = false;
-
-        // Chão da ilha: y = 2.5 (topo da base). Se estiver sobre a ilha,
-        // a altura mínima é 2.5. Fora da ilha, cai no oceano (y=-0.6).
-        // Vamos considerar que o jogador só anda sobre a ilha (base 60x60).
-        const dentroDaIlha = Math.abs(novaPosicao.x) < 30 && Math.abs(novaPosicao.z) < 30;
-        const alturaChao = dentroDaIlha ? 2.5 : -0.6;
-
-        // Resolve colisão com caixas (colinas, pedras, troncos)
-        const empurrao = resolverColisoes(novaPosicao, playerState.radius);
-        novaPosicao.add(empurrao);
-
-        // Verifica chão
-        if (novaPosicao.y <= alturaChao) {
-            novaPosicao.y = alturaChao;
-            playerState.velocity.y = 0;
-            playerState.onGround = true;
-        }
-
-        // Limita o jogador ao mundo (evita cair para sempre)
-        if (novaPosicao.y < -20) {
-            novaPosicao.set(0, 10, 0);
-            playerState.velocity.set(0, 0, 0);
-        }
-
-        player.position.copy(novaPosicao);
-
-        /* ---------- 9.5 Atualiza a câmera em terceira pessoa ---------- */
-        // Posição desejada da câmera em coordenadas esféricas ao redor do jogador
-        const alvoCamera = new THREE.Vector3(
-            player.position.x,
-            player.position.y + 2.2,   // foca um pouco acima da base
-            player.position.z
-        );
-
-        const offsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
-        const offsetY = Math.sin(cameraPitch) * cameraDistance + 3;
-        const offsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
-
-        const posDesejada = new THREE.Vector3(
-            alvoCamera.x + offsetX,
-            alvoCamera.y + offsetY,
-            alvoCamera.z + offsetZ
-        );
-
-        // Suaviza o movimento da câmera (lerp)
-        camera.position.lerp(posDesejada, 0.15);
-        camera.lookAt(alvoCamera);
-
-        /* ---------- 9.6 Atualiza projéteis ---------- */
-        for (let i = projeteis.length - 1; i >= 0; i--) {
-            const p = projeteis[i];
-            p.position.addScaledVector(p.userData.velocidade, delta);
-            p.userData.tempoVida -= delta;
-
-            // Rotação visual divertida
-            p.rotation.x += delta * 8;
-            p.rotation.y += delta * 6;
-
-            // Remove após tempo de vida
-            if (p.userData.tempoVida <= 0) {
-                scene.remove(p);
-                p.geometry.dispose();
-                p.material.dispose();
-                projeteis.splice(i, 1);
-                continue;
-            }
-
-            // Colisão do projétil com o chão/ilha: remove se cair
-            if (p.position.y < -5) {
-                scene.remove(p);
-                p.geometry.dispose();
-                p.material.dispose();
-                projeteis.splice(i, 1);
-            }
-        }
-
-        /* ---------- 9.7 Renderiza ---------- */
-        renderer.render(scene, camera);
-    }
-
-    /* =====================================================================
-       10. AJUSTE DE TAMANHO DA JANELA
-       ===================================================================== */
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    /* =====================================================================
-       11. INICIA O LOOP
-       ===================================================================== */
-    animate();
-
-    </script>
+<header>
+  <h1>Ecos de Aethelgard</h1>
+  <p>RPG 2D de Alta Fantasia — Documento de Design de Jogo</p>
+</header>
+
+<nav>
+  <a href="#arte">Arte</a><a href="#combate">Combate</a><a href="#progressao">Progressão</a>
+  <a href="#itens">Itens</a><a href="#npcs">NPCs</a><a href="#inimigos">Inimigos</a>
+  <a href="#boss">Boss</a><a href="#codigo">Código</a><a href="#prompts">Prompts</a>
+</nav>
+
+<main>
+
+<section id="pilares">
+<h2>1. Pilares de Design</h2>
+<ul>
+<li><b>Impacto sensorial</b> — todo golpe, magia e passo tem peso visual e sonoro.</li>
+<li><b>Mundo vivo</b> — NPCs com rotinas e reações; inimigos com comportamento ecológico.</li>
+<li><b>Itens com alma</b> — cada equipamento altera silhueta, VFX ou moveset do jogador.</li>
+<li><b>Chefes como eventos</b> — batalhas de boss alteram a arena e a narrativa.</li>
+</ul>
+</section>
+
+<section id="arte">
+<h2>2. Direção de Arte</h2>
+<p>Pixel art 32-bit em alta resolução (protagonista: 128–256px de altura), shading pintado à mão em camadas — no espírito de <i>Hollow Knight</i> (silhuetas) e <i>Octopath Traveler</i> (iluminação HD-2D).</p>
+<h3>Pipeline técnico (Godot 4.x)</h3>
+<ul>
+<li><code>CanvasModulate</code> + <code>Light2D</code> para luz dinâmica global; <code>PointLight2D</code> por tocha, feitiço e arma lendária.</li>
+<li>Normal maps por sprite para resposta correta à luz direcional.</li>
+<li><code>GPUParticles2D</code> + <code>SubEmitter</code> para névoa mágica, folhas e estilhaços em cascata.</li>
+<li>Reflexo de água via <code>BackBufferCopy</code> + shader de distorção (ruído Perlin).</li>
+<li>Paralaxe em 5–7 camadas (<code>ParallaxBackground</code>).</li>
+<li>60 FPS com anticipation frames e hit-stop (2–4 frames) no impacto.</li>
+</ul>
+<p><b>Paleta:</b> tons terrosos e esmeralda como base; cores saturadas (ciano, vermelho-sangue, dourado) reservadas a itens lendários e eventos de boss.</p>
+</section>
+
+<section id="combate">
+<h2>3. Sistema de Combate</h2>
+<p>Ataque leve/pesado, esquiva com i-frames, bloqueio/parry — stamina compartilhada entre ataque pesado, esquiva e bloqueio.</p>
+<table>
+<tr><th>Ação</th><th>Efeito</th></tr>
+<tr><td>Ataque leve</td><td>Combo de 3 hits, dano baixo, cancelável em esquiva</td></tr>
+<tr><td>Ataque pesado</td><td>Carregável (até 1.2s), quebra guarda, aplica knockback</td></tr>
+<tr><td>Esquiva</td><td>0.3s de invulnerabilidade, custo de stamina</td></tr>
+<tr><td>Parry</td><td>Janela de 150ms; sucesso = stagger + dano crítico x2</td></tr>
+</table>
+<p>Feedback: hit-stop, camera shake proporcional ao dano, damage numbers estilizados, flash de cor no sprite atingido.</p>
+</section>
+
+<section id="progressao">
+<h2>4. Progressão &amp; Inventário</h2>
+<p>Árvore de habilidades em 3 ramos: <b>Lâmina</b>, <b>Arcano</b>, <b>Sobrevivência</b>. Pontos por nível e marcos narrativos. Armas lendárias desbloqueiam nós exclusivos; maestria passiva reduz custo de stamina com uso repetido.</p>
+<p>Inventário por peso e categoria (Armas, Armaduras, Relíquias — 3 slots, Consumíveis, Materiais, Itens de missão). Exceder capacidade reduz velocidade de esquiva.</p>
+</section>
+
+<section id="itens">
+<h2>5. Itens, Equipamentos e Relíquias</h2>
+
+<div class="item-card">
+<span class="tag">Arma Lendária</span>
+<h3>Lâmina Estilhaçada de Aethel</h3>
+<p>Brilho ciano pulsante; rastro de gelo persistente (2s) no chão a cada golpe. Aplica <i>slow</i> no alvo.</p>
+</div>
+
+<div class="item-card">
+<span class="tag">Arma Lendária</span>
+<h3>Martelo da Forja Profunda</h3>
+<p>Explosão de brasas ao atingir o solo; queima terreno por 3s (dano contínuo em área).</p>
+</div>
+
+<div class="item-card">
+<span class="tag">Consumível</span>
+<h3>Cálice de Sangue de Dragão</h3>
+<p>Animação de borbulhar no inventário; ao consumir, +25% dano por 10s e os olhos do personagem brilham em vermelho.</p>
+</div>
+
+<div class="item-card">
+<span class="tag">Relíquia</span>
+<h3>Manto do Vento Noturno</h3>
+<p>Transforma o dash em um bando de corvos por 1s de invulnerabilidade total — dispersão de partículas que se reagrupam no ponto final.</p>
+</div>
+</section>
+
+<section id="npcs">
+<h2>6. NPCs</h2>
+<h3>Galdur, o Colecionador de Restos</h3>
+<p>Mercador goblin idoso, mochila gigante com lanternas brilhantes (fonte de luz própria). Estados: <code>Neutro → Alerta → Pânico</code>. Arma sacada a 4 tiles de distância dispara animação de pânico e recusa trocas.</p>
+<h3>Elara, a Cavaleira Desonrada</h3>
+<p>Companheira/guia, armadura quebrada e enferrujada. Diálogo ramificado (3 níveis). Animação ociosa: tenta polir o escudo e suspira, em loop de 4s.</p>
+</section>
+
+<section id="inimigos">
+<h2>7. Inimigos</h2>
+<h3>Espreitadores de Musgo</h3>
+<p>Lupinos camuflados (shader de dissolução com a vegetação); lunge de emboscada com telegraph de 0.4s.</p>
+<h3>Golens de Vidro Amaldiçoado</h3>
+<p>Shader de refração em tempo real; feixes de luz com telegraph de mira (0.8s). Ao morrer, fragmentam-se em estilhaços com física simples.</p>
+</section>
+
+<section id="boss">
+<h2>8. Boss: Morgath, o Algoz das Raízes</h2>
+<p>Gigante de madeira corrompida e ossos, ~40% da altura da tela.</p>
+<table>
+<tr><th>Fase</th><th>Gatilho</th><th>Padrão de Ataque</th><th>Ambiente</th></tr>
+<tr><td>1</td><td>Início da luta</td><td>Golpes lentos; espinhos de raiz sobem do solo (telegraph 0.6s)</td><td>Iluminação neutra, música lenta</td></tr>
+<tr><td>2</td><td>50% de vida</td><td>Arranca o próprio braço como machado; ataques em área, +40% velocidade</td><td>Arena fica vermelha, música acelera</td></tr>
+</table>
+</section>
+
+<section id="codigo">
+<h2>9. Código — Movimento do Jogador (GDScript / Godot 4.x)</h2>
+<pre><code>extends CharacterBody2D
+class_name PlayerController
+
+@export var move_speed: float = 180.0
+@export var dash_speed: float = 620.0
+@export var dash_duration: float = 0.22
+
+var is_dashing: bool = false
+var is_invulnerable: bool = false
+
+func _physics_process(delta: float) -> void:
+    var input_dir := Vector2(
+        Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
+        Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
+    ).normalized()
+    velocity = input_dir * move_speed
+
+    if Input.is_action_just_pressed("dash"):
+        _start_dash(input_dir)
+
+    move_and_slide()
+
+func _start_dash(dir: Vector2) -> void:
+    is_invulnerable = true
+    velocity = dir * dash_speed
+    await get_tree().create_timer(dash_duration).timeout
+    is_invulnerable = false
+</code></pre>
+<p>Scripts completos (<code>PlayerController.gd</code>, <code>CombatSystem.gd</code>, <code>NPCInteractable.gd</code>) foram entregues como arquivos separados na conversa.</p>
+</section>
+
+<section id="prompts">
+<h2>10. Prompts de Geração de Sprite Sheets</h2>
+<div class="prompt"><b>Personagem Principal:</b> "Character sprite sheet, 32-bit high-resolution pixel art, 128px height, high-fantasy adventurer with cloak and sword, hand-painted shading, dynamic rim lighting, 8-directional idle/walk/run/attack/dash frames, transparent background, muted earth-tone palette with cyan accent, style: Hollow Knight clarity meets Octopath Traveler lighting."</div>
+<div class="prompt"><b>Galdur (NPC):</b> "NPC sprite sheet, 32-bit pixel art, elderly goblin merchant, hunched posture, oversized backpack with glowing lanterns, idle breathing frames, panic animation frames, warm lantern-light rim glow, earthy green-brown palette, transparent background."</div>
+<div class="prompt"><b>Boss Morgath:</b> "Boss sprite sheet, large-scale 32-bit pixel art giant, corrupted wood and bone anatomy, moss textures, phase 1 ground-slam frames with root spikes, phase 2 enraged frames with detached wooden arm axe, glowing red emissive cracks, dark fantasy palette shifting brown to deep red, transparent background."</div>
+</section>
+
+</main>
+<footer>Ecos de Aethelgard — Game Design Document</footer>
 </body>
 </html>
