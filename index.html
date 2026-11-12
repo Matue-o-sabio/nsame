@@ -8,98 +8,74 @@
 </head>
 <body>
 <div id="app">
-
   <canvas id="game"></canvas>
 
-  <!-- Overlays -->
   <div id="rageoverlay"></div>
   <div id="vignette"></div>
-  <div id="mapflash"></div>
 
-  <!-- HUD principal -->
+  <!-- HUD -->
   <div id="hud">
-
-    <!-- Painel de vitais (canto superior esquerdo) -->
     <div class="vitalspanel">
       <div class="avatar" id="avatar"></div>
       <div class="vitals">
-        <div class="bar hp">
-          <div class="fill" id="hpfill"></div>
-          <span id="hptext">100 / 100</span>
-        </div>
-        <div class="bar mana">
-          <div class="fill" id="manafill"></div>
-          <span id="manatext">60 / 60</span>
-        </div>
-        <div class="bar rage">
-          <div class="fill" id="ragefill"></div>
-          <span id="ragetext">FÚRIA</span>
-        </div>
+        <div class="bar hp"><div class="fill" id="hpfill"></div><span id="hptext">100 / 100</span></div>
+        <div class="bar mana"><div class="fill" id="manafill"></div><span id="manatext">60 / 60</span></div>
+        <div class="bar rage"><div class="fill" id="ragefill"></div><span id="ragetext">FÚRIA</span></div>
       </div>
     </div>
 
-    <!-- Localização atual (canto superior direito) -->
     <div class="locationpanel">
       <div class="maptitle" id="maptitle">VILA DE AETHEL</div>
       <div class="mapsub" id="mapsub">Refúgio dos sobreviventes</div>
-      <div class="minimap">
-        <canvas id="minimap" width="160" height="110"></canvas>
-      </div>
+      <div class="minimap"><canvas id="minimap" width="160" height="110"></canvas></div>
     </div>
 
-    <!-- Barra do Boss -->
+    <div id="goldpanel">
+      <div class="goldicon"></div>
+      <div class="goldamount"><span id="goldcount">0</span> <span class="goldlabel">ouro</span></div>
+    </div>
+
+    <div id="questpanel" class="hidden">
+      <div class="questtitle">OBJETIVO</div>
+      <div class="questtext" id="questtext"></div>
+    </div>
+
     <div id="bossbar" class="hidden">
       <div class="bossname">MORGATH, O ALGOZ DAS RAÍZES</div>
       <div class="bar boss"><div class="fill" id="bossfill"></div></div>
     </div>
 
-    <!-- Poções (canto inferior esquerdo) -->
     <div class="potionbar">
-      <div class="potionicon" id="potionicon">
-        <div class="glass"></div>
-        <div class="liquid"></div>
-      </div>
+      <div class="potionicon"><div class="glass"></div><div class="liquid"></div></div>
       <div class="potioninfo">
         <div class="potionname">Cálice de Sangue</div>
-        <div class="potioncount">x <span id="potioncount">3</span> <span class="keyhint">[1]</span></div>
+        <div class="potioncount">x <span id="potioncount">0</span> <span class="keyhint">[1]</span></div>
       </div>
     </div>
 
-    <!-- Dica de controles (canto inferior direito) -->
     <div id="hint">
-      <b>WASD</b> mover · <b>J</b> atacar · <b>Shift</b> dash ·
-      <b>Q</b> nova · <b>E</b> interagir · <b>I</b> inventário · <b>1</b> poção
+      <b>WASD</b> mover · <b>J</b> atacar · <b>Shift</b> dash · <b>Q</b> nova ·
+      <b>E</b> interagir · <b>I</b> inventário · <b>1</b> poção
     </div>
   </div>
 
   <!-- Inventário -->
   <div id="inventory" class="panel hidden">
     <h2>Inventário</h2>
-    <div class="items">
-      <div class="item">
-        <div class="icon swordicon"></div>
-        <div class="iname">Lâmina Estilhaçada de Aethel</div>
-        <div class="idesc">Lendária · gélida · +brilho ciano</div>
-      </div>
-      <div class="item">
-        <div class="icon cloakicon"></div>
-        <div class="iname">Manto do Vento Noturno</div>
-        <div class="idesc">Relíquia · dash em bando de corvos</div>
-      </div>
-      <div class="item potionitem" data-item="potion">
-        <div class="potion">
-          <div class="glass"></div>
-          <div class="liquid"></div>
-          <span class="bubble"></span>
-          <span class="bubble"></span>
-          <span class="bubble"></span>
-          <span class="bubble"></span>
-        </div>
-        <div class="iname">Cálice de Sangue de Dragão</div>
-        <div class="idesc">Consumível · <span id="potioncountinv">3</span> restantes</div>
-      </div>
+    <div class="items" id="invitems"></div>
+    <div class="invfooter">Ouro: <b><span id="invgold">0</span></b> · Pressione <b>I</b> para fechar</div>
+  </div>
+
+  <!-- Loja -->
+  <div id="shop" class="panel hidden">
+    <h2 id="shopname">Loja</h2>
+    <div class="shoptabs">
+      <button class="shoptab active" data-tab="buy">Comprar</button>
+      <button class="shoptab" data-tab="sell">Vender</button>
     </div>
-    <div class="closehint">Pressione <b>I</b> para fechar</div>
+    <div class="shopgold">Ouro: <b><span id="shopgold">0</span></b></div>
+    <div class="shoplist" id="shoplist"></div>
+    <div class="closehint">Pressione <b>E</b> ou <b>Esc</b> para fechar</div>
   </div>
 
   <!-- Diálogo -->
@@ -112,6 +88,9 @@
     </div>
   </div>
 
+  <!-- Toast de item -->
+  <div id="toast" class="hidden"></div>
+
   <!-- Tela inicial -->
   <div id="startscreen">
     <h1>AETHEL</h1>
@@ -121,10 +100,10 @@
       Carregue a lâmina quebrada. Atravesse a névoa. Não pare de andar.
     </p>
     <button id="startbtn">ENTRAR NO VALE</button>
-    <p class="credits">WASD mover · Clique ou J atacar · Shift dash · Q nova gélida</p>
+    <p class="credits">WASD mover · J atacar · Shift dash · Q nova · E interagir</p>
   </div>
 
-  <!-- Tela de transição de mapa -->
+  <!-- Transição -->
   <div id="transition" class="hidden">
     <div class="transinner">
       <div class="transname" id="transname">VILA DE AETHEL</div>
@@ -132,6 +111,19 @@
     </div>
   </div>
 
+  <!-- Vitória / New Game+ -->
+  <div id="victory" class="hidden">
+    <div class="victoryinner">
+      <h1>MORGATH CAIU</h1>
+      <p class="victorysub">O vale respira novamente. Mas algo ainda sussurra nas raízes.</p>
+      <div class="victorystats">
+        <div>Ouro acumulado: <b><span id="vtotalgold">0</span></b></div>
+        <div>Upgrades: <b><span id="vupgrades">0</span>/3</b></div>
+      </div>
+      <button id="newgameplusbtn">INICIAR NOVO JOGO+</button>
+      <p class="victorynote">Você mantém ouro, itens e equipamentos.</p>
+    </div>
+  </div>
 </div>
 <script src="game.js"></script>
 </body>
