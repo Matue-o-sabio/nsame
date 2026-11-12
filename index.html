@@ -1,331 +1,675 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mini Estúdio – Sintetizador e Sequenciador</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<style>
-:root{
-  --bg:#14161b; --panel:#1b1e25; --edge:#2a2f39; --ink:#e8eaf0; --mute:#9aa3b2;
-  --amber:#ffb347; --teal:#6ee7d3; --blue:#8ab4ff; --key-w:#e9ecf1; --key-b:#0d0f13;
-  box-sizing:border-box; color-scheme:dark;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
-}
-*,*::before,*::after{box-sizing:inherit}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
-.app{max-width:1100px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:16px}
-h1{font-size:20px;font-weight:600;margin:0}
-h2{font-size:15px;font-weight:600;margin:0 0 14px;color:var(--ink)}
-header p{margin:4px 0 0;color:var(--mute)}
-.panel{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:16px}
-.top{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:720px){.top{grid-template-columns:1fr}}
-.ctl{display:grid;grid-template-columns:110px 1fr 56px;align-items:center;gap:10px;margin-bottom:12px}
-.ctl label{color:var(--mute)}
-.ctl output{text-align:right;font-variant-numeric:tabular-nums}
-input[type=range]{width:100%;accent-color:var(--amber);height:28px}
-/* Botões */
-button,select,input[type=number]{font:inherit;color:var(--ink);background:#252a34;border:1px solid var(--edge);border-radius:6px;padding:8px 12px;cursor:pointer;transition:background .08s,transform .08s,border-color .08s}
-button:hover{background:#2e3440}
-button:active{transform:scale(.96)}
-button:focus-visible,input:focus-visible,.key:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.waves{display:flex;gap:8px;flex-wrap:wrap}
-.waves button[aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:#1a1100;font-weight:600}
-/* Transporte */
-.transport{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-#play{background:var(--amber);border-color:var(--amber);color:#1a1100;font-weight:600;min-width:84px}
-#play:hover{background:#ffc26b}
-#play.on{background:#3a2a10;color:var(--amber)}
-.bpm{display:flex;align-items:center;gap:8px;color:var(--mute)}
-.bpm input{width:76px}
-/* Grade */
-.grid-wrap{overflow-x:auto;padding-bottom:4px}
-.row{display:grid;grid-template-columns:64px repeat(16,minmax(30px,1fr));gap:4px;align-items:center;min-width:620px;margin-bottom:6px}
-.row .name{color:var(--mute)}
-.step{height:42px;padding:0;border-radius:5px;background:#252a34}
-.step:nth-child(5n+2),.step:nth-child(5n+3),.step:nth-child(5n+4),.step:nth-child(5n+5){}
-.step.grp{background:#2d333f}
-.step.on{background:var(--c);border-color:var(--c);box-shadow:0 0 10px color-mix(in srgb,var(--c) 45%,transparent)}
-.step.now{outline:2px solid #fff;outline-offset:-2px}
-.row[data-t=kick]{--c:var(--amber)} .row[data-t=snare]{--c:var(--teal)} .row[data-t=hat]{--c:var(--blue)}
-/* Piano */
-.piano{display:flex;height:190px;user-select:none;touch-action:none;overflow-x:auto}
-.key{position:relative;flex:1 0 38px;background:var(--key-w);border:1px solid #9ca3af;border-radius:0 0 6px 6px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;color:#4b5563;font-size:13px;cursor:pointer}
-.key.down{background:var(--amber)}
-.black{position:absolute;top:0;right:-14px;width:26px;height:118px;background:var(--key-b);border:1px solid #000;border-radius:0 0 5px 5px;z-index:2;color:#9aa3b2;font-size:12px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px}
-.black.down{background:var(--amber);color:#1a1100}
-.hint{color:var(--mute);margin:10px 0 0;font-size:13px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Projeto Ilha Blocky - Protótipo 3D</title>
+    <style>
+        /* ===== ESTILO PARA TELA CHEIA ===== */
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;   /* remove barras de rolagem */
+            width: 100%;
+            height: 100%;
+            background: #87CEEB; /* cor de céu de fallback */
+            font-family: Arial, sans-serif;
+        }
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* ===== INSTRUÇÕES NA TELA ===== */
+        #instrucoes {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 1px 1px 2px #000;
+        }
+        #instrucoes b { color: #ffd966; }
+        /* ===== CROSSHAIR SIMPLES (opcional) ===== */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            margin: -3px 0 0 -3px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
-<div class="app">
-  <header>
-    <h1>Mini Estúdio</h1>
-    <p>Toque o piano, escolha o timbre e monte uma batida de 16 passos.</p>
-  </header>
 
-  <div class="top">
-    <section class="panel" aria-labelledby="h-synth">
-      <h2 id="h-synth">Sintetizador</h2>
-      <div class="waves" id="waves" role="group" aria-label="Tipo de onda">
-        <button data-w="sine" aria-pressed="false">Sine</button>
-        <button data-w="square" aria-pressed="false">Square</button>
-        <button data-w="sawtooth" aria-pressed="true">Sawtooth</button>
-        <button data-w="triangle" aria-pressed="false">Triangle</button>
-      </div>
-    </section>
-
-    <section class="panel" aria-labelledby="h-fx">
-      <h2 id="h-fx">Efeitos</h2>
-      <div class="ctl"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="70"><output id="volO">70%</output></div>
-      <div class="ctl"><label for="cut">Filtro (low-pass)</label><input id="cut" type="range" min="0" max="100" value="100"><output id="cutO">20 kHz</output></div>
-      <div class="ctl"><label for="dly">Delay</label><input id="dly" type="range" min="0" max="100" value="0"><output id="dlyO">0%</output></div>
-    </section>
-  </div>
-
-  <section class="panel" aria-labelledby="h-seq">
-    <h2 id="h-seq">Sequenciador</h2>
-    <div class="transport">
-      <button id="play">Play</button>
-      <button id="clear">Limpar</button>
-      <label class="bpm">BPM <input id="bpm" type="number" min="40" max="220" value="110"></label>
+    <!-- Instruções de controle exibidas ao jogador -->
+    <div id="instrucoes">
+        <b>WASD</b> mover &nbsp;|&nbsp; <b>Espaço</b> pular<br />
+        <b>Mouse</b> orbitar câmera &nbsp;|&nbsp; <b>Clique Esq.</b> disparar poder<br />
+        <i>Clique na tela para travar o mouse</i>
     </div>
-    <div class="grid-wrap"><div id="grid"></div></div>
-  </section>
+    <div id="crosshair"></div>
 
-  <section class="panel" aria-labelledby="h-keys">
-    <h2 id="h-keys">Teclado</h2>
-    <div class="piano" id="piano"></div>
-    <p class="hint">No computador: A W S E D F T G Y H U J K O L P ; tocam de Dó a Mi. O restante do piano responde ao mouse e ao toque.</p>
-  </section>
-</div>
+    <!-- ============================================================
+         IMPORTAÇÃO DO THREE.JS VIA CDN (módulo ES)
+         Utilizamos importmap para permitir o uso de "import ... from 'three'"
+         ============================================================ -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
 
-<script>
-/* ============ 1. GRAFO DE ÁUDIO ============
-   Fluxo do som:
-   Osciladores (teclas) ─┐
-   Bateria (kick/snare/hat) ─┴─► [filter] ─┬────────────────► [master] ─► caixas de som
-                                            └► [delay] ─► [wet] ─► [master]
-                                                  ▲  │
-                                                  └─[feedback]  (repetições do eco)
-   O AudioContext só pode começar depois de um gesto do usuário, então é criado no primeiro clique/tecla. */
-let ctx, master, filter, delay, wet, noiseBuf;
+    <script type="module">
+    /* =====================================================================
+       IMPORTAÇÕES
+       ===================================================================== */
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    // Nota: Não usaremos OrbitControls diretamente para o jogador, mas ele
+    // ajuda a entender o padrão. A câmera do jogador é customizada abaixo.
 
-function initAudio(){
-  if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
+    /* =====================================================================
+       1. CONFIGURAÇÃO DO RENDERER, CENA E CÂMERA
+       ===================================================================== */
+    const canvas = document.createElement('canvas');
+    canvas.id = 'game-canvas';
+    document.body.appendChild(canvas);
 
-  master = ctx.createGain();                       // GainNode = volume geral
-  master.gain.value = vol.value / 100;
+    // Renderer com Anti-Aliasing e sombras
+    const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;                       // sombras dinâmicas
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;        // sombras suaves
+    renderer.outputColorSpace = THREE.SRGBColorSpace;        // cores corretas
 
-  filter = ctx.createBiquadFilter();               // BiquadFilterNode = corta agudos
-  filter.type = 'lowpass';
-  filter.frequency.value = cutHz();
+    // Cena principal
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);            // céu azul
+    scene.fog = new THREE.Fog(0x87CEEB, 60, 220);            // névoa ao longe
 
-  delay = ctx.createDelay(1);                      // DelayNode = eco
-  delay.delayTime.value = 0.3;
-  const feedback = ctx.createGain();               // realimenta o delay para gerar repetições
-  feedback.gain.value = 0.4;
-  wet = ctx.createGain();                          // quantidade de eco misturada ao som
-  wet.gain.value = dly.value / 100;
+    // Câmera em perspectiva (terceira pessoa)
+    const camera = new THREE.PerspectiveCamera(
+        65,                                     // FOV
+        window.innerWidth / window.innerHeight, // aspect
+        0.1,                                    // near
+        500                                     // far
+    );
+    camera.position.set(0, 8, 12);
 
-  filter.connect(master);                          // caminho direto
-  filter.connect(delay);                           // envio para o eco
-  delay.connect(feedback); feedback.connect(delay);
-  delay.connect(wet); wet.connect(master);
-  master.connect(ctx.destination);                 // saída final
+    /* =====================================================================
+       2. ILUMINAÇÃO (AmbientLight + DirectionalLight simulando sol)
+       ===================================================================== */
+    // Luz ambiente suave para preencher sombras
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambientLight);
 
-  // 1 segundo de ruído branco, reaproveitado por snare e hi-hat
-  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-  const d = noiseBuf.getChannelData(0);
-  for(let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-}
+    // Luz direcional (sol) com sombras
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    sunLight.position.set(40, 60, 25);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 200;
+    sunLight.shadow.camera.left = -80;
+    sunLight.shadow.camera.right = 80;
+    sunLight.shadow.camera.top = 80;
+    sunLight.shadow.camera.bottom = -80;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
 
-/* ============ 2. CONTROLES DE SOM ============ */
-const $ = id => document.getElementById(id);
-const vol = $('vol'), cut = $('cut'), dly = $('dly');
-let wave = 'sawtooth';
+    // Luz hemisférica extra para dar um tom de céu/terra (opcional, deixa mais bonito)
+    const hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x3a5f3a, 0.35);
+    scene.add(hemiLight);
 
-const cutHz = () => 200 * Math.pow(100, cut.value / 100);   // 200 Hz … 20 kHz (escala logarítmica)
+    /* =====================================================================
+       3. AMBIENTE: OCEANO E ILHA
+       ===================================================================== */
 
-$('waves').addEventListener('click', e => {
-  const b = e.target.closest('button'); if(!b) return;
-  wave = b.dataset.w;
-  document.querySelectorAll('#waves button').forEach(x => x.setAttribute('aria-pressed', x === b));
-});
-vol.oninput = () => { $('volO').textContent = vol.value + '%'; if(ctx) master.gain.setTargetAtTime(vol.value / 100, ctx.currentTime, .01); };
-cut.oninput = () => {
-  const f = cutHz();
-  $('cutO').textContent = f >= 1000 ? (f / 1000).toFixed(1) + ' kHz' : Math.round(f) + ' Hz';
-  if(ctx) filter.frequency.setTargetAtTime(f, ctx.currentTime, .01);
-};
-dly.oninput = () => { $('dlyO').textContent = dly.value + '%'; if(ctx) wet.gain.setTargetAtTime(dly.value / 100, ctx.currentTime, .01); };
+    // ---------- 3.1 OCEANO (plano grande e azul) ----------
+    const oceanGeometry = new THREE.PlaneGeometry(400, 400, 1, 1);
+    const oceanMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1E90FF,
+        transparent: true,
+        opacity: 0.85,
+        roughness: 0.2,
+        metalness: 0.1
+    });
+    const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = -0.6;                 // levemente abaixo do nível da ilha
+    ocean.receiveShadow = true;
+    scene.add(ocean);
 
-/* ============ 3. TECLADO VIRTUAL ============ */
-const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const KEYMAP = 'awsedftgyhujkolp;';               // a=Dó, w=Dó#, s=Ré … conforme o pedido
-const TOTAL = 24, BASE = 60;                      // 2 oitavas a partir do Dó central (MIDI 60)
-const active = {};                                // notas soando: id -> função que encerra a nota
-const keyEls = {};
+    // ---------- 3.2 ILHA PRINCIPAL (base grande de "terra") ----------
+    // [SUBSTITUIÇÃO FUTURA] Aqui você pode trocar esta caixa grande por um
+    // modelo .glb de ilha feito no Blender. Basta fazer:
+    //   const loader = new GLTFLoader();
+    //   loader.load('ilha.glb', (gltf) => { scene.add(gltf.scene); });
+    const ilhaGroup = new THREE.Group();
+    scene.add(ilhaGroup);
 
-// Cada tecla = 1 OscillatorNode → GainNode (envelope) → filter
-function noteOn(id, midi){
-  if(active[id]) return;
-  initAudio();
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const env = ctx.createGain();
-  osc.type = wave;
-  osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);   // fórmula MIDI → Hz
-  env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(0.3, t + 0.01);             // ataque curto, evita "clique"
-  env.gain.setTargetAtTime(0.2, t + 0.01, 0.2);                // leve queda para o sustain
-  osc.connect(env); env.connect(filter);
-  osc.start(t);
-  active[id] = () => {                                         // release suave ao soltar a tecla
-    const n = ctx.currentTime;
-    env.gain.cancelScheduledValues(n);
-    env.gain.setValueAtTime(env.gain.value, n);
-    env.gain.setTargetAtTime(0, n, 0.06);
-    osc.stop(n + 0.4);
-  };
-  keyEls[midi].classList.add('down');
-}
-function noteOff(id, midi){
-  if(!active[id]) return;
-  active[id](); delete active[id];
-  keyEls[midi].classList.remove('down');
-}
+    const materialTerra = new THREE.MeshStandardMaterial({ color: 0x6ab04c, roughness: 0.9 });
+    const materialTerraEscura = new THREE.MeshStandardMaterial({ color: 0x4a8f3c, roughness: 0.9 });
+    const materialAreia = new THREE.MeshStandardMaterial({ color: 0xE9D8A6, roughness: 1.0 });
+    const materialPedra = new THREE.MeshStandardMaterial({ color: 0x8d8d8d, roughness: 0.8 });
 
-// Monta o piano: teclas pretas ficam dentro da tecla branca anterior
-const piano = $('piano');
-for(let i = 0; i < TOTAL; i++){
-  const name = NAMES[i % 12];
-  if(name.includes('#')) continue;
-  const white = mk(i, name);
-  const next = i + 1;
-  if(next < TOTAL && NAMES[next % 12].includes('#')){
-    const bk = mk(next, NAMES[next % 12], true);
-    white.appendChild(bk);
-  }
-  piano.appendChild(white);
-}
-function mk(i, name, black){
-  const el = document.createElement('div');
-  const midi = BASE + i;
-  el.className = black ? 'black' : 'key';
-  el.setAttribute('aria-label', name + (4 + Math.floor(i / 12)));
-  if(!black) el.tabIndex = -1;
-  el.textContent = i < KEYMAP.length ? KEYMAP[i].toUpperCase() : '';
-  keyEls[midi] = el;
-  const id = 'm' + midi;
-  el.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); noteOn(id, midi); });
-  ['pointerup','pointerleave','pointercancel'].forEach(ev => el.addEventListener(ev, e => { e.stopPropagation(); noteOff(id, midi); }));
-  return el;
-}
-// Teclado do computador
-addEventListener('keydown', e => {
-  if(e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.target.tagName === 'INPUT') return;
-  const i = KEYMAP.indexOf(e.key.toLowerCase());
-  if(i >= 0) noteOn('k' + i, BASE + i);
-});
-addEventListener('keyup', e => {
-  const i = KEYMAP.indexOf(e.key.toLowerCase());
-  if(i >= 0) noteOff('k' + i, BASE + i);
-});
+    // Base principal (bloco grande de terra)
+    const baseIlha = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 60), materialTerra);
+    baseIlha.position.set(0, -0.5, 0);
+    baseIlha.receiveShadow = true;
+    baseIlha.castShadow = true;
+    ilhaGroup.add(baseIlha);
 
-/* ============ 4. BATERIA SINTETIZADA ============ */
-const drums = {
-  kick(t){            // seno que despenca de 150 Hz para 40 Hz = "bumbo"
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-    g.gain.setValueAtTime(1, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    o.connect(g); g.connect(filter); o.start(t); o.stop(t + 0.4);
-  },
-  snare(t){           // ruído filtrado + um "corpo" triangular
-    noise(t, 0.2, 1000, 0.6);
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(190, t);
-    g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    o.connect(g); g.connect(filter); o.start(t); o.stop(t + 0.15);
-  },
-  hat(t){ noise(t, 0.05, 7000, 0.35); }   // ruído agudo e curtíssimo
-};
-function noise(t, dur, hp, level){
-  const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-  s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = hp;
-  g.gain.setValueAtTime(level, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  s.connect(f); f.connect(g); g.connect(filter); s.start(t); s.stop(t + dur + 0.02);
-}
+    // Faixa de areia ao redor da base (um pouco maior e mais baixa)
+    const areia = new THREE.Mesh(new THREE.BoxGeometry(64, 1.5, 64), materialAreia);
+    areia.position.set(0, -2.6, 0);
+    areia.receiveShadow = true;
+    areia.castShadow = true;
+    ilhaGroup.add(areia);
 
-/* ============ 5. STEP SEQUENCER ============ */
-const TRACKS = [['kick','Kick'], ['snare','Snare'], ['hat','Hi-hat']];
-const pattern = {
-  kick:  [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
-  snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
-  hat:   [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0]
-};
-const grid = $('grid');
-TRACKS.forEach(([key, label]) => {
-  const row = document.createElement('div');
-  row.className = 'row'; row.dataset.t = key;
-  row.innerHTML = '<span class="name">' + label + '</span>';
-  for(let s = 0; s < 16; s++){
-    const b = document.createElement('button');
-    b.className = 'step' + (s % 8 < 4 ? ' grp' : '') + (pattern[key][s] ? ' on' : '');
-    b.setAttribute('aria-label', label + ' passo ' + (s + 1));
-    b.onclick = () => { pattern[key][s] ^= 1; b.classList.toggle('on'); };
-    row.appendChild(b);
-  }
-  grid.appendChild(row);
-});
-$('clear').onclick = () => {
-  TRACKS.forEach(([k]) => pattern[k].fill(0));
-  document.querySelectorAll('.step').forEach(b => b.classList.remove('on'));
-};
+    // ---------- 3.3 ELEVAÇÕES / TERRENO PROCEDURAL ----------
+    // Colinas e plataformas em degraus (estilo blocky). Cada degrau é um
+    // BoxGeometry posicionado em alturas diferentes. O jogador pode subir
+    // neles por causa da colisão AABB simples implementada depois.
+    const colinas = [
+        // [x, y, z, largura, altura, profundidade]
+        [ -14, 3,  -10, 14, 3, 14 ],
+        [ -14, 6,  -10, 10, 3, 10 ],
+        [  18, 3,   14, 12, 3, 12 ],
+        [  18, 6,   14,  8, 3,  8 ],
+        [   0, 3,   20, 10, 3,  8 ],
+        [ -20, 3,   18,  8, 3, 10 ],
+        [  22, 3,  -20, 10, 3, 10 ]
+    ];
+    const colinasMeshes = [];
+    colinas.forEach(([x, y, z, w, h, d]) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materialTerraEscura);
+        m.position.set(x, y, z);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        ilhaGroup.add(m);
+        colinasMeshes.push(m);
+    });
 
-// Agendador "lookahead": um timer JS frouxo (25 ms) agenda os sons ~100 ms adiante
-// usando o relógio de precisão do áudio (ctx.currentTime), o que mantém o ritmo estável.
-let playing = false, step = 0, nextTime = 0, timer, queue = [];
-const bpm = $('bpm');
+    // Alguns blocos de pedra espalhados (obstáculos)
+    const pedrasMeshes = [];
+    const posicoesPedras = [
+        [ 8, 1.5, 8], [-6, 1.5, 6], [10, 1.5, -8],
+        [-10, 1.5, -12], [4, 1.5, -16], [-18, 1.5, 0]
+    ];
+    posicoesPedras.forEach(([x, y, z]) => {
+        const pedra = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), materialPedra);
+        pedra.position.set(x, y, z);
+        pedra.castShadow = true;
+        pedra.receiveShadow = true;
+        ilhaGroup.add(pedra);
+        pedrasMeshes.push(pedra);
+    });
 
-function schedule(){
-  while(nextTime < ctx.currentTime + 0.1){
-    TRACKS.forEach(([k]) => { if(pattern[k][step]) drums[k](nextTime); });
-    queue.push({ s: step, t: nextTime });
-    nextTime += 60 / (+bpm.value || 110) / 4;            // 1 passo = semicolcheia
-    step = (step + 1) % 16;
-  }
-}
-function paint(){                                         // acende a coluna que está tocando agora
-  if(!playing) return;
-  while(queue.length && queue[0].t <= ctx.currentTime){
-    const { s } = queue.shift();
-    document.querySelectorAll('.now').forEach(x => x.classList.remove('now'));
-    document.querySelectorAll('.row').forEach(r => r.children[s + 1].classList.add('now'));
-  }
-  requestAnimationFrame(paint);
-}
-$('play').onclick = () => {
-  initAudio();
-  playing = !playing;
-  $('play').textContent = playing ? 'Stop' : 'Play';
-  $('play').classList.toggle('on', playing);
-  if(playing){
-    step = 0; queue = []; nextTime = ctx.currentTime + 0.05;
-    timer = setInterval(schedule, 25);
-    requestAnimationFrame(paint);
-  } else {
-    clearInterval(timer);
-    document.querySelectorAll('.now').forEach(x => x.classList.remove('now'));
-  }
-};
-</script>
+    /* =====================================================================
+       4. ÁRVORES DE BLOCOS (procedurais)
+       [SUBSTITUIÇÃO FUTURA] Troque o grupo "arvore" por um modelo .glb
+       ===================================================================== */
+    const materialTronco = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 1 });
+    const materialFolha = new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.9 });
+
+    function criarArvore(x, z, escala = 1) {
+        const arvore = new THREE.Group();
+
+        const tronco = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), materialTronco);
+        tronco.position.y = 2.5;
+        tronco.castShadow = true;
+        tronco.receiveShadow = true;
+        arvore.add(tronco);
+
+        // Copa feita de 3 cubos em degraus
+        const copa1 = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 4), materialFolha);
+        copa1.position.y = 6;
+        copa1.castShadow = true;
+        copa1.receiveShadow = true;
+        arvore.add(copa1);
+
+        const copa2 = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), materialFolha);
+        copa2.position.y = 8;
+        copa2.castShadow = true;
+        copa2.receiveShadow = true;
+        arvore.add(copa2);
+
+        const copa3 = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 2), materialFolha);
+        copa3.position.y = 9.5;
+        copa3.castShadow = true;
+        copa3.receiveShadow = true;
+        arvore.add(copa3);
+
+        arvore.position.set(x, 2.5, z); // base do tronco no topo da ilha (y=2.5)
+        arvore.scale.setScalar(escala);
+        return arvore;
+    }
+
+    // Posições das árvores na ilha
+    const posicoesArvores = [
+        [-5, 5], [6, 3], [-8, -4], [12, 6], [-16, 8],
+        [15, -12], [-12, 14], [20, 2], [-22, -6], [3, -20]
+    ];
+    posicoesArvores.forEach(([x, z]) => {
+        const a = criarArvore(x, z, 0.9 + Math.random() * 0.4);
+        ilhaGroup.add(a);
+    });
+
+    /* =====================================================================
+       5. PERSONAGEM (AVATAR ESTILO ROBLOX)
+       [SUBSTITUIÇÃO FUTURA] Importe um .glb/.gltf do seu personagem e
+       substitua este grupo "player". Exemplo:
+           const loader = new GLTFLoader();
+           loader.load('personagem.glb', (gltf) => {
+               player.remove(...player.children);
+               player.add(gltf.scene);
+           });
+       ===================================================================== */
+    const player = new THREE.Group();
+
+    // Cabeça
+    const cabecaGeo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+    const cabecaMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd });
+    const cabeca = new THREE.Mesh(cabecaGeo, cabecaMat);
+    cabeca.position.y = 3.3;
+    cabeca.castShadow = true;
+    cabeca.receiveShadow = true;
+    player.add(cabeca);
+
+    // Olhos (dois cubinhos pretos)
+    const olhoGeo = new THREE.BoxGeometry(0.25, 0.25, 0.1);
+    const olhoMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const olhoEsq = new THREE.Mesh(olhoGeo, olhoMat);
+    olhoEsq.position.set(-0.35, 3.45, 0.82);
+    player.add(olhoEsq);
+    const olhoDir = olhoEsq.clone();
+    olhoDir.position.x = 0.35;
+    player.add(olhoDir);
+
+    // Tronco
+    const troncoGeo = new THREE.BoxGeometry(1.8, 2.2, 1.0);
+    const troncoMat = new THREE.MeshStandardMaterial({ color: 0x2E86DE });
+    const tronco = new THREE.Mesh(troncoGeo, troncoMat);
+    tronco.position.y = 1.7;
+    tronco.castShadow = true;
+    tronco.receiveShadow = true;
+    player.add(tronco);
+
+    // Braços
+    const bracoGeo = new THREE.BoxGeometry(0.6, 2.0, 0.7);
+    const bracoMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd });
+
+    const bracoEsq = new THREE.Mesh(bracoGeo, bracoMat);
+    bracoEsq.position.set(-1.25, 1.75, 0);
+    bracoEsq.castShadow = true;
+    bracoEsq.receiveShadow = true;
+    player.add(bracoEsq);
+
+    const bracoDir = bracoEsq.clone();
+    bracoDir.position.x = 1.25;
+    player.add(bracoDir);
+
+    // Pernas
+    const pernaGeo = new THREE.BoxGeometry(0.75, 1.6, 0.8);
+    const pernaMat = new THREE.MeshStandardMaterial({ color: 0x2C3E50 });
+
+    const pernaEsq = new THREE.Mesh(pernaGeo, pernaMat);
+    pernaEsq.position.set(-0.5, -0.4, 0);
+    pernaEsq.castShadow = true;
+    pernaEsq.receiveShadow = true;
+    player.add(pernaEsq);
+
+    const pernaDir = pernaEsq.clone();
+    pernaDir.position.x = 0.5;
+    player.add(pernaDir);
+
+    // O centro do player fica na base dos pés (y=0 do grupo = chão)
+    player.position.set(0, 2.5, 0); // começa em cima da ilha
+    scene.add(player);
+
+    // ---------- Variáveis de física do jogador ----------
+    const playerState = {
+        velocity: new THREE.Vector3(0, 0, 0),
+        onGround: false,
+        speed: 9.0,
+        jumpForce: 11.0,
+        gravity: -28.0,
+        radius: 0.9,           // "raio" aproximado para colisão
+        height: 4.0            // altura total aproximada
+    };
+
+    /* =====================================================================
+       6. CONTROLES: TECLADO E MOUSE (CÂMERA EM TERCEIRA PESSOA)
+       ===================================================================== */
+    const keys = { w: false, a: false, s: false, d: false, space: false };
+
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW') keys.w = true;
+        if (e.code === 'KeyA') keys.a = true;
+        if (e.code === 'KeyS') keys.s = true;
+        if (e.code === 'KeyD') keys.d = true;
+        if (e.code === 'Space') { keys.space = true; e.preventDefault(); }
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW') keys.w = false;
+        if (e.code === 'KeyA') keys.a = false;
+        if (e.code === 'KeyS') keys.s = false;
+        if (e.code === 'KeyD') keys.d = false;
+        if (e.code === 'Space') keys.space = false;
+    });
+
+    // ----- Câmera orbital em terceira pessoa -----
+    // A câmera gira em torno do jogador com base no movimento do mouse.
+    // yaw = rotação horizontal, pitch = vertical.
+    let cameraYaw = 0;       // em radianos
+    let cameraPitch = 0.35;  // inclinação inicial (olhando levemente para baixo)
+    const cameraDistance = 12;
+    const mouseSensitivity = 0.0025;
+
+    // Pointer Lock para capturar o mouse
+    let pointerLocked = false;
+    canvas.addEventListener('click', () => {
+        if (!pointerLocked) {
+            canvas.requestPointerLock();
+        }
+    });
+    document.addEventListener('pointerlockchange', () => {
+        pointerLocked = document.pointerLockElement === canvas;
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!pointerLocked) return;
+        cameraYaw   -= e.movementX * mouseSensitivity;
+        cameraPitch -= e.movementY * mouseSensitivity;
+        // Limita o pitch para não virar a câmera de cabeça para baixo
+        const maxPitch = Math.PI / 2 - 0.15;
+        cameraPitch = Math.max(-maxPitch, Math.min(maxPitch, cameraPitch));
+    });
+
+    /* =====================================================================
+       7. MECÂNICA DE HABILIDADE: PROJÉTIL "PODER" NO CLIQUE ESQUERDO
+       [SUBSTITUIÇÃO FUTURA] Troque o projétil por um modelo .glb de bola
+       de fogo / raio e adicione animações/partículas.
+       ===================================================================== */
+    const projeteis = [];   // array de projéteis ativos
+
+    function dispararPoder() {
+        // Material brilhante (MeshBasicMaterial) + PointLight
+        const projMat = new THREE.MeshBasicMaterial({ color: 0x00E5FF });
+        const projGeo = new THREE.SphereGeometry(0.55, 16, 16);
+        const proj = new THREE.Mesh(projGeo, projMat);
+        proj.castShadow = false;    // MeshBasicMaterial não recebe sombra, mas ok
+
+        // Ponto de origem: na frente e na altura do peito do jogador
+        const origem = new THREE.Vector3(0, 1.8, 0);
+        origem.applyMatrix4(player.matrixWorld);
+        proj.position.copy(origem);
+
+        // Luz pontual no projétil
+        const luz = new THREE.PointLight(0x00E5FF, 2.5, 12);
+        proj.add(luz);
+
+        // Direção: para onde o jogador está olhando (mesma direção da câmera
+        // projetada no plano horizontal, com leve ajuste vertical)
+        const dirCamera = new THREE.Vector3();
+        camera.getWorldDirection(dirCamera);
+        dirCamera.y = 0.05; // leve inclinação para cima, estilo "poder"
+        dirCamera.normalize();
+
+        // Velocidade do projétil
+        const velocidade = 38;
+        proj.userData.velocidade = dirCamera.clone().multiplyScalar(velocidade);
+        proj.userData.tempoVida = 3.0;   // segundos
+
+        scene.add(proj);
+        projeteis.push(proj);
+    }
+
+    // Listener de clique esquerdo (quando o mouse está travado)
+    document.addEventListener('mousedown', (e) => {
+        if (e.button === 0 && pointerLocked) {
+            dispararPoder();
+        }
+    });
+
+    /* =====================================================================
+       8. SISTEMA DE COLISÃO SIMPLES (AABB / distância)
+       Para simplificar, consideramos o jogador como uma esfera/capsula
+       e checamos colisão com blocos da ilha (caixas) e com o chão.
+       ===================================================================== */
+
+    // Lista de "caixas de colisão" do mundo. Cada entrada é um Box3.
+    // Reunimos os objetos que o jogador deve colidir.
+    const colisores = [];
+
+    function registrarColisor(mesh) {
+        // Atualiza a matrixWorld para garantir posição correta
+        mesh.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(mesh);
+        colisores.push(box);
+    }
+
+    // Registra a base da ilha, as colinas, pedras e troncos de árvores
+    registrarColisor(baseIlha);
+    colinasMeshes.forEach(registrarColisor);
+    pedrasMeshes.forEach(registrarColisor);
+
+    // Para as árvores, registramos apenas o tronco (para não colidir com folhas)
+    ilhaGroup.children.forEach((child) => {
+        if (child.isGroup) {
+            // É uma árvore: o primeiro filho é o tronco
+            const troncoMesh = child.children[0];
+            if (troncoMesh) {
+                // Ajusta para a posição global
+                const box = new THREE.Box3().setFromObject(troncoMesh);
+                colisores.push(box);
+            }
+        }
+    });
+
+    // Verifica colisão do jogador (como um ponto com raio) contra as caixas
+    // Retorna um vetor de "empurrão" para resolver a colisão.
+    function resolverColisoes(posicao, raio) {
+        const empurrao = new THREE.Vector3();
+        const playerBox = new THREE.Box3(
+            new THREE.Vector3(posicao.x - raio, posicao.y, posicao.z - raio),
+            new THREE.Vector3(posicao.x + raio, posicao.y + playerState.height, posicao.z + raio)
+        );
+
+        for (const box of colisores) {
+            if (playerBox.intersectsBox(box)) {
+                // Calcula sobreposição em cada eixo
+                const overlapX = Math.min(playerBox.max.x, box.max.x) - Math.max(playerBox.min.x, box.min.x);
+                const overlapY = Math.min(playerBox.max.y, box.max.y) - Math.max(playerBox.min.y, box.min.y);
+                const overlapZ = Math.min(playerBox.max.z, box.max.z) - Math.max(playerBox.min.z, box.min.z);
+
+                // Empurra pelo eixo de menor sobreposição
+                if (overlapX < overlapY && overlapX < overlapZ) {
+                    const dir = (posicao.x < box.getCenter(new THREE.Vector3()).x) ? -1 : 1;
+                    empurrao.x += dir * overlapX;
+                } else if (overlapZ < overlapY) {
+                    const dir = (posicao.z < box.getCenter(new THREE.Vector3()).z) ? -1 : 1;
+                    empurrao.z += dir * overlapZ;
+                } else {
+                    // Colisão vertical: se estiver caindo em cima do bloco, sobe
+                    if (posicao.y + 0.1 < box.max.y && playerState.velocity.y <= 0) {
+                        empurrao.y += overlapY;
+                        playerState.onGround = true;
+                        playerState.velocity.y = 0;
+                    }
+                }
+            }
+        }
+        return empurrao;
+    }
+
+    /* =====================================================================
+       9. LOOP DE ANIMAÇÃO PRINCIPAL
+       ===================================================================== */
+    const clock = new THREE.Clock();
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const delta = Math.min(clock.getDelta(), 0.05); // limita delta para estabilidade
+
+        /* ---------- 9.1 Movimento do jogador (relativo à câmera) ---------- */
+        // Direção frontal da câmera no plano XZ
+        const frente = new THREE.Vector3();
+        camera.getWorldDirection(frente);
+        frente.y = 0;
+        frente.normalize();
+
+        const direita = new THREE.Vector3().crossVectors(frente, new THREE.Vector3(0, 1, 0)).normalize();
+
+        // Vetor de movimento desejado
+        const movimento = new THREE.Vector3();
+        if (keys.w) movimento.add(frente);
+        if (keys.s) movimento.sub(frente);
+        if (keys.d) movimento.add(direita);
+        if (keys.a) movimento.sub(direita);
+
+        if (movimento.lengthSq() > 0) {
+            movimento.normalize();
+            // Rotaciona o avatar para "olhar" na direção do movimento
+            const angulo = Math.atan2(movimento.x, movimento.z);
+            player.rotation.y = angulo; // suavização opcional poderia ser feita aqui
+        }
+
+        // Aplica velocidade horizontal
+        const velocidadeAlvo = movimento.clone().multiplyScalar(playerState.speed);
+        playerState.velocity.x = THREE.MathUtils.lerp(playerState.velocity.x, velocidadeAlvo.x, 0.25);
+        playerState.velocity.z = THREE.MathUtils.lerp(playerState.velocity.z, velocidadeAlvo.z, 0.25);
+
+        /* ---------- 9.2 Pulo e gravidade ---------- */
+        if (keys.space && playerState.onGround) {
+            playerState.velocity.y = playerState.jumpForce;
+            playerState.onGround = false;
+        }
+
+        // Aplica gravidade
+        playerState.velocity.y += playerState.gravity * delta;
+
+        /* ---------- 9.3 Integração de posição ---------- */
+        const novaPosicao = player.position.clone();
+        novaPosicao.x += playerState.velocity.x * delta;
+        novaPosicao.y += playerState.velocity.y * delta;
+        novaPosicao.z += playerState.velocity.z * delta;
+
+        /* ---------- 9.4 Colisão e chão ---------- */
+        playerState.onGround = false;
+
+        // Chão da ilha: y = 2.5 (topo da base). Se estiver sobre a ilha,
+        // a altura mínima é 2.5. Fora da ilha, cai no oceano (y=-0.6).
+        // Vamos considerar que o jogador só anda sobre a ilha (base 60x60).
+        const dentroDaIlha = Math.abs(novaPosicao.x) < 30 && Math.abs(novaPosicao.z) < 30;
+        const alturaChao = dentroDaIlha ? 2.5 : -0.6;
+
+        // Resolve colisão com caixas (colinas, pedras, troncos)
+        const empurrao = resolverColisoes(novaPosicao, playerState.radius);
+        novaPosicao.add(empurrao);
+
+        // Verifica chão
+        if (novaPosicao.y <= alturaChao) {
+            novaPosicao.y = alturaChao;
+            playerState.velocity.y = 0;
+            playerState.onGround = true;
+        }
+
+        // Limita o jogador ao mundo (evita cair para sempre)
+        if (novaPosicao.y < -20) {
+            novaPosicao.set(0, 10, 0);
+            playerState.velocity.set(0, 0, 0);
+        }
+
+        player.position.copy(novaPosicao);
+
+        /* ---------- 9.5 Atualiza a câmera em terceira pessoa ---------- */
+        // Posição desejada da câmera em coordenadas esféricas ao redor do jogador
+        const alvoCamera = new THREE.Vector3(
+            player.position.x,
+            player.position.y + 2.2,   // foca um pouco acima da base
+            player.position.z
+        );
+
+        const offsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+        const offsetY = Math.sin(cameraPitch) * cameraDistance + 3;
+        const offsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+
+        const posDesejada = new THREE.Vector3(
+            alvoCamera.x + offsetX,
+            alvoCamera.y + offsetY,
+            alvoCamera.z + offsetZ
+        );
+
+        // Suaviza o movimento da câmera (lerp)
+        camera.position.lerp(posDesejada, 0.15);
+        camera.lookAt(alvoCamera);
+
+        /* ---------- 9.6 Atualiza projéteis ---------- */
+        for (let i = projeteis.length - 1; i >= 0; i--) {
+            const p = projeteis[i];
+            p.position.addScaledVector(p.userData.velocidade, delta);
+            p.userData.tempoVida -= delta;
+
+            // Rotação visual divertida
+            p.rotation.x += delta * 8;
+            p.rotation.y += delta * 6;
+
+            // Remove após tempo de vida
+            if (p.userData.tempoVida <= 0) {
+                scene.remove(p);
+                p.geometry.dispose();
+                p.material.dispose();
+                projeteis.splice(i, 1);
+                continue;
+            }
+
+            // Colisão do projétil com o chão/ilha: remove se cair
+            if (p.position.y < -5) {
+                scene.remove(p);
+                p.geometry.dispose();
+                p.material.dispose();
+                projeteis.splice(i, 1);
+            }
+        }
+
+        /* ---------- 9.7 Renderiza ---------- */
+        renderer.render(scene, camera);
+    }
+
+    /* =====================================================================
+       10. AJUSTE DE TAMANHO DA JANELA
+       ===================================================================== */
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /* =====================================================================
+       11. INICIA O LOOP
+       ===================================================================== */
+    animate();
+
+    </script>
 </body>
 </html>
